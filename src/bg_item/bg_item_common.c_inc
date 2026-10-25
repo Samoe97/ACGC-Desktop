@@ -2741,7 +2741,11 @@ static void bg_item_common_chg_draw_tbl_perfect(GAME_PLAY* play, bg_item_common_
     int* order_tbl = common->_139F4;
     mFI_block_tbl_c* block_tbl;
     int flag0;
+#ifdef TARGET_PC
+    u16 clear_tree_cut_flags; /* one bit per visible-block slot */
+#else
     u8 clear_tree_cut_flags;
+#endif
     int t0[mFM_VISIBLE_BLOCK_NUM];
     int t1[mFM_VISIBLE_BLOCK_NUM];
     int t2[mFM_VISIBLE_BLOCK_NUM];

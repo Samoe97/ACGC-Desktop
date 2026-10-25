@@ -37,7 +37,14 @@ extern "C" {
 #define BLOCKXZ_2_BLOCKIDX(x, z) ((z) * BLOCK_X_NUM + (x))
 #define UNITXZ_2_UNIT(x, z) ((z) * UT_X_NUM + (x))
 
+#ifdef TARGET_PC
+/* Room for the full 3x3 around the player. Only the wallpaper idle camera's
+ * title-demo field allocates more than 4 (see mFM_FieldInit); every other
+ * scene still asks for its own count and uses the original 2x2 selection. */
+#define mFM_VISIBLE_BLOCK_NUM 9
+#else
 #define mFM_VISIBLE_BLOCK_NUM 4 /* number of visible blocks (nearest to the Player) */
+#endif
 #define mFM_SOUND_SOURCE_NUM 6
 #define mFM_MOVE_ACTOR_NUM 16
 #define mFM_HANIWA_STEP_NUM 4

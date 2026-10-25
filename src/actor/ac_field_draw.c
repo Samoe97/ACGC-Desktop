@@ -224,7 +224,7 @@ static void aFD_PrepareFieldDraw(ACTOR* actorx, GAME* game) {
     mFI_Wpos2BlockNum(&bx, &bz, player->actor_class.world.position);
     aFD_SetActorPosition(actorx, play);
 
-    for (i = 0; i < aFD_BLOCK_DRAW_NUM; i++) {
+    for (i = 0; i < 9; i++) {
         block->bx = bx + draw_block_offset_table[i].offset_x;
         block->bz = bz + draw_block_offset_table[i].offset_z;
         mFI_BkNum2WposXZ(&block->wpos.x, &block->wpos.z, block->bx, block->bz);
@@ -232,6 +232,30 @@ static void aFD_PrepareFieldDraw(ACTOR* actorx, GAME* game) {
         block->exist = TRUE;
         block++;
     }
+
+#ifdef TARGET_PC
+    /* The wallpaper idle camera (the only user of a 9-slot field) sees past
+     * the 3x3, so add the outer ring of a 5x5. Every block's ground mesh is
+     * resident; trees/buildings out there still follow the 3x3 slots. */
+    {
+        int dx, dz;
+
+        for (dx = -2; dx <= 2; dx++) {
+            for (dz = -2; dz <= 2; dz++) {
+                if (dx >= -1 && dx <= 1 && dz >= -1 && dz <= 1) continue;
+
+                block->bx = bx + dx;
+                block->bz = bz + dz;
+                block->exist = g_fdinfo->bg_num >= 9 && mFI_BlockCheck(block->bx, block->bz);
+                if (block->exist) {
+                    mFI_BkNum2WposXZ(&block->wpos.x, &block->wpos.z, block->bx, block->bz);
+                    block->wpos.y = mFI_BkNum2BaseHeight(block->bx, block->bz);
+                }
+                block++;
+            }
+        }
+    }
+#endif
 
     aFD_MakeMarinScrollInfo(actorx, game);
 }

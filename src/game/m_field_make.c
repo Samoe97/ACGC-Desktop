@@ -1219,6 +1219,16 @@ extern void mFM_FieldInit(GAME_PLAY* play) {
     int scene = Save_Get(scene_no);
 
     mFM_LoadBGCommonTex(TRUE, Save_Get(bg_tex_idx));
+#ifdef TARGET_PC
+    /* Wallpaper idle mode shows the title demo through a zoomed-out camera;
+     * give it slots for the whole 3x3 so trees and buildings don't pop. */
+    {
+        extern int g_pc_wallpaper_enabled;
+        if (g_pc_wallpaper_enabled && scene == SCENE_TITLE_DEMO) {
+            bg_disp_num = mFM_VISIBLE_BLOCK_NUM;
+        }
+    }
+#endif
     if (bg_disp_num > mFM_VISIBLE_BLOCK_NUM) {
         bg_disp_num = mFM_VISIBLE_BLOCK_NUM;
     }

@@ -287,8 +287,18 @@ extern int Actor_draw_actor_no_culling_check(ACTOR* actor) {
 
 extern int Actor_draw_actor_no_culling_check2(ACTOR* actor, xyz_t* camera_pos, f32 camera_w) {
     int res = FALSE;
+    f32 cull_distance = actor->cull_distance;
 
-    if (-actor->cull_radius < camera_pos->z && camera_pos->z < actor->cull_distance + actor->cull_radius) {
+#ifdef TARGET_PC
+    /* The wallpaper idle camera sits ~1.5x further back than the gameplay
+     * camera; without this the top of its view culls (and freezes) actors. */
+    {
+        extern int pc_idle_active(void);
+        if (pc_idle_active()) cull_distance += 2500.0f;
+    }
+#endif
+
+    if (-actor->cull_radius < camera_pos->z && camera_pos->z < cull_distance + actor->cull_radius) {
         f32 m = camera_w < 1.0f ? 1.0f : 1.0f / camera_w;
 #ifdef PC_ENHANCEMENTS
         /* Widescreen hor+ widens the rendered frustum.  The projection matrix

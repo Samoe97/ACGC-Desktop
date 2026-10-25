@@ -47,7 +47,7 @@
 /* keep the camera center far enough inside the map that the view never shows
  * the void past the border cliffs (the gameplay camera can't see that far) */
 #define IDLE_CAM_MIN_X      (mFI_BK_WORLDSIZE_X_F * 1.55f)
-#define IDLE_CAM_MAX_X      (mFI_BK_WORLDSIZE_X_F * (FG_BLOCK_X_NUM + 0.45f))
+#define IDLE_CAM_MAX_X      (mFI_BK_WORLDSIZE_X_F * (FG_BLOCK_X_NUM + 0.3f))
 #define IDLE_CAM_MIN_Z      (mFI_BK_WORLDSIZE_Z_F * 1.55f)
 
 typedef struct {

@@ -570,8 +570,14 @@ static int mFI_GetFreeRegisterBgInfo() {
     mFI_register_bg_info_c* bg_info = l_register_bg_info;
     int res = -1;
     int i;
+#ifdef TARGET_PC
+    /* only slots this field allocated a display list buffer for */
+    int slot_num = g_fdinfo->bg_num < mFM_VISIBLE_BLOCK_NUM ? g_fdinfo->bg_num : mFM_VISIBLE_BLOCK_NUM;
+#else
+    int slot_num = mFM_VISIBLE_BLOCK_NUM;
+#endif
 
-    for (i = 0; i < mFM_VISIBLE_BLOCK_NUM; i++) {
+    for (i = 0; i < slot_num; i++) {
         if (mFI_CheckFreeRegisterBgInfo(bg_info)) {
             res = i;
             break;
@@ -966,6 +972,12 @@ extern EVW_ANIME_DATA* mFI_GetBGTexAnimInfo(s8* anim_num, int bx, int bz) {
     return anime;
 }
 
+#ifdef TARGET_PC
+typedef u16 mFI_slot_bits_t; /* one bit per visible-block slot; PC can have 9 */
+#else
+typedef u8 mFI_slot_bits_t;
+#endif
+
 static int mFI_BGDispMatch(int* idx, int bx, int bz) {
     int max = g_fdinfo->bg_num;
     int res = FALSE;
@@ -997,7 +1009,7 @@ static int mFI_SearchNullDisp(int* idx) {
     return res;
 }
 
-static void mFI_BGDispMake(u8* disp_bitfield, int bx, int bz) {
+static void mFI_BGDispMake(mFI_slot_bits_t* disp_bitfield, int bx, int bz) {
     int num = mFI_GetBlockNum(bx, bz);
     int idx;
 
@@ -1071,7 +1083,7 @@ static void mFI_WhereisInBlock(u8* pos_bitfield, xyz_t wpos) {
 }
 
 extern void mFI_BGDisplayListRefresh(xyz_t wpos) {
-    u8 disp_bitfield;
+    mFI_slot_bits_t disp_bitfield;
     u8 where_bitfield;
     int bx;
     int bz;
@@ -1093,6 +1105,23 @@ extern void mFI_BGDisplayListRefresh(xyz_t wpos) {
     }
 
     mFI_WhereisInBlock(&where_bitfield, wpos);
+
+#ifdef TARGET_PC
+    /* A field with slots for the whole 3x3 (wallpaper idle mode) loads every
+     * neighbour instead of the 2x2 quadrant nearest the player. */
+    if (g_fdinfo->bg_num >= 9) {
+        int dx, dz;
+
+        for (dz = -1; dz <= 1; dz++) {
+            for (dx = -1; dx <= 1; dx++) {
+                if ((dx != 0 || dz != 0) && mFI_BlockCheck(bx + dx, bz + dz)) {
+                    mFI_BGDispMake(&disp_bitfield, bx + dx, bz + dz);
+                }
+            }
+        }
+    } else
+#endif
+    {
 
     /* Check if the acres to the immediate left or right should be displayed */
     nearest_bx = bx - 1;
@@ -1134,6 +1163,8 @@ extern void mFI_BGDisplayListRefresh(xyz_t wpos) {
                 }
             }
         }
+    }
+
     }
 
     for (i = 0; i < mFM_VISIBLE_BLOCK_NUM; i++) {
@@ -1484,8 +1515,8 @@ extern int mFI_GetItemTable_NoReset(mFI_item_table_c* item_table, xyz_t wpos) {
     mFM_field_draw_info_c* bg_disp = mFI_BGDisplayListTop();
     int t_no;
     u8 _num = 0;
-    u8 _bitfield = 0;
-    u8 clear_tree_cut_bitfield = 0;
+    mFI_slot_bits_t _bitfield = 0;
+    mFI_slot_bits_t clear_tree_cut_bitfield = 0;
     int bx;
     int bz;
     int block_x_tbl[mFM_VISIBLE_BLOCK_NUM];
