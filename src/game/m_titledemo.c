@@ -240,6 +240,16 @@ extern void title_demo_move(GAME_PLAY* play) {
                 return;
             }
         }
+        /* Wallpaper idle: autopilot instead of the recording, and the demo
+         * clock stands still so it never fades out to the next demo. */
+        {
+            extern int pc_idle_active(void);
+            extern void pc_idle_title_demo_move(GAME_PLAY* play);
+            if (pc_idle_active()) {
+                pc_idle_title_demo_move(play);
+                return;
+            }
+        }
 #endif
         float delta_time = play->game.graph->dt;
 

@@ -839,6 +839,10 @@ static void aAL_actor_draw(ACTOR* actor, GAME* game) {
    * sets it back to 1 if it actually runs. Cleared on actor cleanup. */
   { extern int g_pc_title_main_menu_visible;
     g_pc_title_main_menu_visible = 0; }
+
+  /* wallpaper idle: no logo or menu over the town */
+  { extern int pc_idle_active(void);
+    if (pc_idle_active()) return; }
 #endif
 
 #ifdef TARGET_PC

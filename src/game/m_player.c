@@ -1739,6 +1739,13 @@ typedef void (*mPlayer_DRAW_PROC)(ACTOR*, GAME*);
 static void Player_actor_draw_Normal(ACTOR*, GAME*);
 
 extern void Player_actor_draw(ACTOR* actorx, GAME* game) {
+#ifdef TARGET_PC
+    /* wallpaper idle: the demo player is only there to stream the town in */
+    {
+        extern int pc_idle_active(void);
+        if (pc_idle_active()) return;
+    }
+#endif
     static const s8 data[] = {
         mPlayer_DRAW_TYPE_NONE,   mPlayer_DRAW_TYPE_NORMAL, mPlayer_DRAW_TYPE_NORMAL, mPlayer_DRAW_TYPE_NORMAL,
         mPlayer_DRAW_TYPE_NORMAL, mPlayer_DRAW_TYPE_NORMAL, mPlayer_DRAW_TYPE_NORMAL, mPlayer_DRAW_TYPE_NORMAL,

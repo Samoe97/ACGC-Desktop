@@ -2711,8 +2711,41 @@ static void Camera2_change_main_index(GAME_PLAY* play) {
     }
 }
 
+#ifdef TARGET_PC
+#include "pc_idle.h"
+
+/* Wallpaper idle mode owns the camera outright. Same as Camera2_SetView, minus
+ * the gameplay near/far override, so the zoomed-out view isn't clipped. */
+static int Camera2_pc_idle_process(GAME_PLAY* play) {
+    Camera2* camera = &play->camera;
+    View* view = &play->view;
+    xyz_t final_center;
+    xyz_t final_eye;
+
+    if (!pc_idle_camera(play, &camera->lookat.center, &camera->lookat.eye, &camera->perspective.fov_y,
+                        &camera->perspective.near, &camera->perspective.far)) {
+        return FALSE;
+    }
+
+    Camera2_DirectionCalc(play);
+    setScaleView(view, camera->perspective.scale);
+    setPerspectiveView(view, camera->perspective.fov_y, camera->perspective.near, camera->perspective.far);
+    xyz_t_add(&camera->lookat.center, &camera->offset_center, &final_center);
+    xyz_t_add(&camera->lookat.eye, &camera->offset_eye, &final_eye);
+    setLookAtView(view, &final_eye, &final_center, &camera->lookat.up);
+    Camera2_SetMicPos(play);
+    return TRUE;
+}
+#endif
+
 typedef void (*CAMERA2_MAIN_INDEX_PROC)(GAME_PLAY*);
 extern void Camera2_process(GAME_PLAY* play) {
+#ifdef TARGET_PC
+    if (Camera2_pc_idle_process(play)) {
+        return;
+    }
+#endif
+
     static const CAMERA2_MAIN_INDEX_PROC proc[CAMERA2_PROCESS_NUM] = {
         &Camera2_main_Stop,   &Camera2_main_Normal,    &Camera2_main_Wade,  &Camera2_main_Talk,
         &Camera2_main_Demo,   &Camera2_main_Item,      &Camera2_main_Lock,  &Camera2_main_Door,

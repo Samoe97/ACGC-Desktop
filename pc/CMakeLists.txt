@@ -299,6 +299,7 @@ set(PC_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/src/pc_assets.c
     ${CMAKE_CURRENT_SOURCE_DIR}/src/pc_disc.c
     ${CMAKE_CURRENT_SOURCE_DIR}/src/pc_wallpaper.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/pc_idle.c
 )
 
 # =============================================================================
