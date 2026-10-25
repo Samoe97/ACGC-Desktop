@@ -10,6 +10,7 @@
 #include "pc_pause_menu.h"
 #include "pc_settings_menu.h"
 #include "pc_profiler.h"
+#include "pc_wallpaper.h"
 #include "m_kankyo.h"
 
 /* prefer discrete GPU on laptops */
@@ -63,7 +64,9 @@ void pc_platform_init(void) {
 #endif
 
     {
-        Uint32 flags = SDL_WINDOW_OPENGL | SDL_WINDOW_SHOWN | SDL_WINDOW_RESIZABLE;
+        /* --wallpaper shows the window once it's attached to the desktop */
+        Uint32 flags = SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE |
+                       (g_pc_wallpaper_enabled ? SDL_WINDOW_HIDDEN : SDL_WINDOW_SHOWN);
         int win_w = g_pc_settings.window_width;
         int win_h = g_pc_settings.window_height;
         if (g_pc_settings.fullscreen == 1) {
@@ -132,6 +135,7 @@ static void pc_speedhack_toggle(void) {
 }
 
 void pc_platform_shutdown(void) {
+    pc_wallpaper_shutdown();
     pc_audio_shutdown();
     pc_audio_mq_shutdown();
     PADCleanup();
@@ -166,6 +170,13 @@ int pc_platform_poll_events(void) {
     pc_typing_update();
 
     while (SDL_PollEvent(&event)) {
+        /* the wallpaper takes no input; only hotkeys/tray switch it to play */
+        if (g_pc_wallpaper_active &&
+            (event.type == SDL_KEYDOWN || event.type == SDL_TEXTINPUT ||
+             event.type == SDL_MOUSEBUTTONDOWN || event.type == SDL_CONTROLLERBUTTONDOWN ||
+             event.type == SDL_CONTROLLERAXISMOTION)) {
+            continue;
+        }
         switch (event.type) {
             case SDL_QUIT:
                 g_pc_running = 0;
@@ -234,6 +245,7 @@ int pc_platform_poll_events(void) {
                 break;
         }
     }
+    pc_wallpaper_update();
     return 1;
 }
 
@@ -270,6 +282,8 @@ int main(int argc, char* argv[]) {
             printf("  --date M/D[/Y]      Override in-game date (e.g. 7/4, 12/24/2026)\n");
             printf("  --rain [intensity]  Force rainy weather; intensity is light, normal, or heavy\n");
             printf("  --uber-shader       Disable shader specialization (single uber shader)\n");
+            printf("  --wallpaper         Run as the desktop wallpaper (Ctrl+Alt+P play, Ctrl+Alt+W return)\n");
+            printf("  --wallpaper-volume N  Idle wallpaper volume, 0-100%% of master (default 0)\n");
             printf("  --help, -h          Show this help message\n");
             return 0;
         } else if (strcmp(argv[i], "--framelimit") == 0) {
@@ -317,6 +331,12 @@ int main(int argc, char* argv[]) {
                 g_pc_date_day = d;
                 if (y >= 2000) g_pc_date_year = y;
             }
+            i++;
+        } else if (strcmp(argv[i], "--wallpaper") == 0) {
+            g_pc_wallpaper_enabled = 1;
+        } else if (strcmp(argv[i], "--wallpaper-volume") == 0 && i + 1 < argc) {
+            int v = atoi(argv[i + 1]);
+            if (v >= 0 && v <= 100) g_pc_wallpaper_volume = v;
             i++;
         } else if (strcmp(argv[i], "--rain") == 0) {
             g_pc_weather_override = mEnv_WEATHER_RAIN;
@@ -395,6 +415,8 @@ int main(int argc, char* argv[]) {
         pc_platform_shutdown();
         return 1;
     }
+
+    pc_wallpaper_init();
 
     ac_entry();                         /* sets HotStartEntry = &entry */
     boot_main(argc, (const char**)argv); /* full init → HotStartEntry → game loop */

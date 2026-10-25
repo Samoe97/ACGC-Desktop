@@ -3,6 +3,7 @@
 #include "pc_typing.h"
 #include "pc_keybindings.h"
 #include "pc_settings.h"
+#include "pc_wallpaper.h"
 #include <dolphin/pad.h>
 
 /* analog stick constants */
@@ -53,6 +54,11 @@ BOOL PADInit(void) {
 
 u32 PADRead(PADStatus* status) {
     memset(status, 0, sizeof(PADStatus) * 4);
+
+    /* idle wallpaper: controller stays connected but nothing is pressed */
+    if (g_pc_wallpaper_active) {
+        return PAD_CHAN0_BIT;
+    }
 
     const u8* keys = SDL_GetKeyboardState(NULL);
     u32 mouse = SDL_GetMouseState(NULL, NULL);

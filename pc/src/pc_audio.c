@@ -10,6 +10,7 @@
  */
 #include "pc_platform.h"
 #include "pc_settings.h"
+#include "pc_wallpaper.h"
 #include "jaudio_NES/audiothread.h"
 
 #define PC_AUDIO_SAMPLE_RATE 32000
@@ -132,6 +133,7 @@ void AIInitDMA(u32 addr, u32 size) {
     int vol = g_pc_settings.master_volume;
     if (vol < 0)   vol = 0;
     if (vol > 100) vol = 100;
+    if (g_pc_wallpaper_active) vol = vol * g_pc_wallpaper_volume / 100;
 
     for (u32 i = 0; i < n_samples; i++) {
         int s = ((int)src[i] * vol) / 100;
