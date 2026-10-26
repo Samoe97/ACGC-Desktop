@@ -21,9 +21,8 @@ This is a fork of [ACGC-PC-Port](https://github.com/flyngmt/ACGC-PC-Port) by Fly
   - **Kept in sync:** the clock resyncs every minute and after the PC wakes from sleep.
   - **Custom clock:** set any date and time in the settings. A custom clock keeps running from the time you set.
 - **Desktop clock widget**, drawn in the style of the in-game clock:
-  - **Clock:** date, weekday, time and am/pm.
-  - **Camera:** rotate, zoom (all the way in matches the normal gameplay camera) and reset.
-  - **Settings** and **Play** buttons.
+  - **Clock:** date, weekday, time and am/pm, with a **Play** button beside the time.
+  - **Drawer:** a thin bar under the time opens to show the camera controls (rotate, zoom, reset) and settings. Fully zoomed in matches the normal gameplay camera.
 - **Weather that fills the screen.** Rain, snow, cherry blossoms and falling leaves cover the whole view and stay put in the world, rather than following the camera.
 - **Tray icon** with Play, Return to wallpaper and Quit.
 
@@ -54,7 +53,9 @@ From the wallpaper, **Play** opens the regular title screen; choose *Start Game*
 
 ### The widget
 
-The panel in the bottom-right corner of your desktop shows the town's clock. Below the clock is a row of buttons:
+The panel in the bottom-right corner of your desktop shows the town's clock. **▶ Play**, to the left of the time, switches to playing.
+
+The thin brown bar under the time is a drawer. Hover over it and it thickens; click it to slide it open, which pushes the clock up and shows the camera buttons. Click the drawer's background to close it again. Each button shows a tooltip when you hover over it.
 
 | Button | Action |
 |---|---|
@@ -62,7 +63,6 @@ The panel in the bottom-right corner of your desktop shows the town's clock. Bel
 | − + | Zoom out / in. Fully zoomed in matches the regular gameplay camera. Hold to keep zooming. |
 | ⌂ | Reset the camera. |
 | ⚙ | Settings. |
-| ▶ Play | Switch to playing. |
 
 ### Settings
 

@@ -3,8 +3,11 @@
  * A small panel in the bottom-right of the desktop drawn in the style of the
  * game's own clock (m_banti): lime date ovals and a weekday badge, white time
  * coins with blinking orange colon dots and an am/pm badge, each with a dark
- * brown rim and a flip-card seam. Under it: camera controls, settings and
- * Play, as cream badges with brown icons.
+ * brown rim and a flip-card seam. A green Play pill sits left of the time.
+ * Under the time is a drawer: a thin brown bar that thickens and turns tan
+ * on hover, and on click slides open (pushing the clock up) to show the
+ * camera controls and settings as cream badges with brown icons. Every
+ * button has a tooltip.
  *
  * The wallpaper sits under the desktop icons, so this is a separate window:
  * a per-pixel-alpha window owned by the window hosting the icon view, which
@@ -24,16 +27,22 @@
 #ifdef _WIN32
 #include <commctrl.h>
 
-/* layout, in 96-DPI units */
-#define WG_W      240
-#define WG_H      128
+/* layout, in 96-DPI units. The window is sized for the open drawer and its
+ * bottom edge is the anchor, so opening the drawer pushes the clock up; the
+ * unused space above is transparent (clicks go through to the desktop). */
+#define WG_W      266
+#define WG_H      130
 #define WG_MARGIN 16    /* from the work area's bottom-right corner */
 
 #define WG_TIMER_TICK   1
 #define WG_TIMER_REPEAT 2
+#define WG_TIMER_ANIM   3
+#define WG_TIMER_TIP    4
 #define WG_TICK_MS         250
 #define WG_REPEAT_DELAY_MS 350
 #define WG_REPEAT_MS       90
+#define WG_ANIM_MS         15
+#define WG_TIP_DELAY_MS    450
 
 #define WG_ROTATE_STEP 5.0f   /* degrees per click/repeat */
 #define WG_ZOOM_STEP   0.05f  /* zoom level per click/repeat (0 = gameplay camera, 1 = default) */
@@ -42,21 +51,34 @@
 
 enum {
     WG_BTN_NONE = -1,
+    /* in the drawer */
     WG_BTN_ROT_L,
     WG_BTN_ROT_R,
     WG_BTN_ZOOM_OUT,
     WG_BTN_ZOOM_IN,
     WG_BTN_RESET,
     WG_BTN_SETTINGS,
-    WG_BTN_PLAY,
+    WG_DRAWER_BTNS,
+    WG_BTN_PLAY = WG_DRAWER_BTNS,
+    WG_BTN_DRAWER, /* the drawer itself: click to open/close */
     WG_BTN_NUM
 };
 
-/* button centers (96-DPI units); Play is a pill */
-static const f32 s_btn_cx[WG_BTN_NUM] = { 22, 50, 78, 106, 134, 162, 205 };
-#define WG_BTN_CY  108.0f
-#define WG_BTN_R   12.0f
-#define WG_PLAY_HW 27.0f
+/* time row: the Play pill, as tall as the time coins, then hh:mm am/pm */
+#define WG_PLAY_CX 34.0f
+#define WG_PLAY_HW 30.0f
+#define WG_TIME_R  15.0f
+
+/* the drawer spans the time digits and am/pm; its height animates from a
+ * thin bar (closed), to a thicker one (hovered), to the open panel */
+#define WG_DRAWER_X0    76.0f
+#define WG_DRAWER_X1    256.0f
+#define WG_DRAWER_THIN  5.0f
+#define WG_DRAWER_HOVER 12.0f
+#define WG_DRAWER_OPEN  38.0f
+#define WG_BTN_X0   96.0f   /* first drawer button's center */
+#define WG_BTN_STEP 28.0f
+#define WG_BTN_R    12.0f
 
 /* colors from m_banti's prim/env colors */
 #define RGBc(r, g, b) ((u32)(((r) << 16) | ((g) << 8) | (b)))
@@ -93,6 +115,12 @@ static int  s_tracking = FALSE;
 static int  s_drawn_key = -1; /* what's on screen, to skip identical redraws */
 static HFONT s_font_digits = NULL, s_font_label = NULL;
 static f32  s_scale = 1.2f;   /* the "Clock size" setting */
+static int  s_open = FALSE;   /* drawer open (target of the animation) */
+static f32  s_open_t = 0.0f, s_hover_t = 0.0f; /* animated 0..1 */
+static DWORD s_anim_last = 0;
+static f32  s_paint_alpha = 1.0f; /* multiplies everything drawn (fading the drawer's buttons) */
+static HWND s_tip = NULL;
+static int  s_tip_for = WG_BTN_NONE;
 
 static const f32 s_scale_choices[] = { 0.8f, 1.0f, 1.2f, 1.5f };
 static const WCHAR* s_scale_names[] = { L"Small", L"Normal", L"Large", L"Extra large" };
@@ -173,6 +201,7 @@ static void cv_blend(wg_canvas* cv, int x, int y, u32 rgb, f32 a) {
     f32 ia;
     u32 dr, dg, db, da;
 
+    a *= s_paint_alpha;
     if (a <= 0.0f || x < 0 || y < 0 || x >= cv->w || y >= cv->h) return;
     if (a > 1.0f) a = 1.0f;
     d = &cv->px[y * cv->w + x];
@@ -289,7 +318,7 @@ static void cv_text(wg_canvas* cv, const WCHAR* s, HFONT font, f32 cx, f32 cy, u
 
 /* ---- icons (32x32 design box, center origin, y down) ---- */
 
-enum { ICON_ROT_L, ICON_ROT_R, ICON_MINUS, ICON_PLUS, ICON_HOME, ICON_GEAR, ICON_PLAY };
+enum { ICON_ROT_L, ICON_ROT_R, ICON_MINUS, ICON_PLUS, ICON_HOME, ICON_GEAR, ICON_PLAY, ICON_CHEVRON };
 
 static f32 seg_dist(f32 px, f32 py, f32 ax, f32 ay, f32 bx, f32 by) {
     f32 dx = bx - ax, dy = by - ay;
@@ -342,6 +371,8 @@ static int icon_inside(f32 x, f32 y, int icon) {
         }
         case ICON_PLAY:
             return in_triangle(x, y, -5.5f, -9.0f, -5.5f, 9.0f, 9.5f, 0.0f);
+        case ICON_CHEVRON: /* pointing down */
+            return seg_dist(x, y, -10.0f, -4.5f, 0.0f, 4.5f) < 3.0f || seg_dist(x, y, 10.0f, -4.5f, 0.0f, 4.5f) < 3.0f;
     }
     return FALSE;
 }
@@ -372,13 +403,88 @@ static void wg_draw_digit_coin(wg_canvas* cv, f32 cx, f32 cy, f32 r, int digit) 
     }
 }
 
+/* where things are right now (96-DPI units), from the drawer's animation */
+typedef struct {
+    f32 open, hover;          /* eased 0..1 */
+    f32 drawer_top, drawer_h;
+    f32 time_cy, date_cy;
+} wg_layout;
+
+static void wg_get_layout(wg_layout* l) {
+    f32 o = s_open_t * s_open_t * (3.0f - 2.0f * s_open_t);
+    f32 d = WG_DRAWER_THIN + (WG_DRAWER_HOVER - WG_DRAWER_THIN) * s_hover_t;
+
+    d += (WG_DRAWER_OPEN - d) * o;
+    l->open = o;
+    l->hover = s_hover_t;
+    l->drawer_h = d;
+    /* the closed bar sits at the top of a strip as tall as the hovered one,
+     * so hovering grows it downward and only opening moves the clock */
+    l->drawer_top = WG_H - 5.0f - (d > WG_DRAWER_HOVER ? d : WG_DRAWER_HOVER);
+    l->time_cy = l->drawer_top - 21.0f;
+    l->date_cy = l->time_cy - 42.0f;
+}
+
+static u32 wg_mix(u32 a, u32 b, f32 t) {
+    u32 r = (u32)(((a >> 16) & 0xFF) + ((f32)((b >> 16) & 0xFF) - ((a >> 16) & 0xFF)) * t + 0.5f);
+    u32 g = (u32)(((a >> 8) & 0xFF) + ((f32)((b >> 8) & 0xFF) - ((a >> 8) & 0xFF)) * t + 0.5f);
+    u32 bl = (u32)((a & 0xFF) + ((f32)(b & 0xFF) - (a & 0xFF)) * t + 0.5f);
+    return RGBc(r, g, bl);
+}
+
+static void wg_render_drawer(wg_canvas* cv, const wg_layout* l) {
+    static const int icons[WG_DRAWER_BTNS] = { ICON_ROT_L, ICON_ROT_R, ICON_MINUS, ICON_PLUS, ICON_HOME, ICON_GEAR };
+    f32 x0 = wg_s(WG_DRAWER_X0), x1 = wg_s(WG_DRAWER_X1);
+    f32 top = wg_s(l->drawer_top), hh = wg_s(l->drawer_h) * 0.5f;
+    f32 cx = (x0 + x1) * 0.5f, cy = top + hh, hw = (x1 - x0) * 0.5f;
+    f32 r = hh < wg_s(10) ? hh : wg_s(10);
+    f32 rimw = wg_s(2.2f);
+    f32 tan = l->hover > l->open ? l->hover : l->open;
+    f32 a;
+    int i;
+
+    /* an all-but-invisible pad under the thin bar: layered windows ignore the
+     * mouse over fully transparent pixels, and the bar alone is a small target */
+    cv_rect(cv, x0, top, x1, top + wg_s(WG_DRAWER_HOVER), COL_BLACK, 0.012f);
+
+    cv_rrect(cv, cx + wg_s(1.0f), cy + wg_s(2.0f), hw, hh, r, COL_BLACK, 0.30f);
+    cv_rrect(cv, cx, cy, hw, hh, r, COL_AMPM_FILL, 1.0f);
+    if (hh > rimw) {
+        cv_rrect(cv, cx, cy, hw - rimw, hh - rimw, r - rimw, wg_mix(COL_AMPM_FILL, COL_BTN_FILL, tan), 1.0f);
+    }
+
+    /* hint: a down chevron on the hovered bar */
+    a = l->hover * (1.0f - l->open * 3.0f);
+    if (a > 0.0f) {
+        s_paint_alpha = a;
+        cv_icon(cv, ICON_CHEVRON, cx, cy, wg_s(13), COL_BTN_ICON);
+        s_paint_alpha = 1.0f;
+    }
+
+    /* the buttons fade in over the last part of the slide */
+    a = (l->open - 0.6f) / 0.4f;
+    if (a <= 0.0f) return;
+    s_paint_alpha = a > 1.0f ? 1.0f : a;
+    for (i = 0; i < WG_DRAWER_BTNS; i++) {
+        f32 grow = (s_down == i) ? 0.92f : (s_hot == i) ? 1.1f : 1.0f;
+        f32 bx = wg_s(WG_BTN_X0 + WG_BTN_STEP * i), br = wg_s(WG_BTN_R) * grow;
+
+        cv_badge(cv, bx, cy, br, br, s_hot == i ? COL_BTN_HOT : COL_TIME_FILL, COL_BTN_RIM, FALSE);
+        cv_icon(cv, icons[i], bx, cy, br * 1.45f, COL_BTN_ICON);
+    }
+    s_paint_alpha = 1.0f;
+}
+
 static void wg_render(wg_canvas* cv) {
     static const WCHAR* week[7] = { L"Sun", L"Mon", L"Tue", L"Wed", L"Thu", L"Fri", L"Sat" };
-    static const int icons[WG_BTN_NUM] = { ICON_ROT_L, ICON_ROT_R, ICON_MINUS, ICON_PLUS,
-                                           ICON_HOME, ICON_GEAR, ICON_PLAY };
-    int hour, min, sec, weekday, month, day, h12, i;
+    int hour, min, sec, weekday, month, day, h12;
+    f32 dy, ty, tr = wg_s(WG_TIME_R);
+    wg_layout l;
     WCHAR buf[8];
 
+    wg_get_layout(&l);
+    dy = wg_s(l.date_cy);
+    ty = wg_s(l.time_cy);
     memset(cv->px, 0, (size_t)cv->w * cv->h * 4);
     pc_idle_get_clock(&hour, &min, &sec, &weekday, &month, &day);
     if (month < 1 || month > 12) {
@@ -389,43 +495,39 @@ static void wg_render(wg_canvas* cv) {
 
     /* date: month . day  weekday */
     swprintf(buf, 8, L"%d", month);
-    cv_badge(cv, wg_s(40), wg_s(26), wg_s(30), wg_s(20), COL_DATE_FILL, COL_DATE_RIM, TRUE);
-    cv_text(cv, buf, s_font_digits, wg_s(40), wg_s(26), COL_DATE_RIM, 1.0f);
-    cv_badge(cv, wg_s(78), wg_s(38), wg_s(4.5f), wg_s(4.5f), COL_DOT, COL_DOT_RIM, FALSE);
+    cv_badge(cv, wg_s(106), dy, wg_s(30), wg_s(20), COL_DATE_FILL, COL_DATE_RIM, TRUE);
+    cv_text(cv, buf, s_font_digits, wg_s(106), dy, COL_DATE_RIM, 1.0f);
+    cv_badge(cv, wg_s(144), dy + wg_s(12), wg_s(4.5f), wg_s(4.5f), COL_DOT, COL_DOT_RIM, FALSE);
     swprintf(buf, 8, L"%d", day);
-    cv_badge(cv, wg_s(116), wg_s(26), wg_s(30), wg_s(20), COL_DATE_FILL, COL_DATE_RIM, TRUE);
-    cv_text(cv, buf, s_font_digits, wg_s(116), wg_s(26), COL_DATE_RIM, 1.0f);
-    cv_badge(cv, wg_s(172), wg_s(26), wg_s(21), wg_s(21), weekday == 0 ? COL_WEEK_SUN : COL_WEEK_DAY,
+    cv_badge(cv, wg_s(182), dy, wg_s(30), wg_s(20), COL_DATE_FILL, COL_DATE_RIM, TRUE);
+    cv_text(cv, buf, s_font_digits, wg_s(182), dy, COL_DATE_RIM, 1.0f);
+    cv_badge(cv, wg_s(238), dy, wg_s(21), wg_s(21), weekday == 0 ? COL_WEEK_SUN : COL_WEEK_DAY,
              COL_DATE_RIM, FALSE);
-    cv_text(cv, week[weekday % 7], s_font_label, wg_s(172), wg_s(26), COL_WEEK_TEXT, 1.0f);
+    cv_text(cv, week[weekday % 7], s_font_label, wg_s(238), dy, COL_WEEK_TEXT, 1.0f);
+
+    /* Play, as tall as the time */
+    {
+        f32 grow = (s_down == WG_BTN_PLAY) ? 0.95f : (s_hot == WG_BTN_PLAY) ? 1.04f : 1.0f;
+        f32 cx = wg_s(WG_PLAY_CX), hw = wg_s(WG_PLAY_HW) * grow, hh = tr * grow;
+
+        cv_badge(cv, cx, ty, hw, hh, s_hot == WG_BTN_PLAY ? COL_PLAY_HOT : COL_PLAY_FILL, COL_PLAY_RIM, FALSE);
+        cv_icon(cv, ICON_PLAY, cx - hw + hh, ty, hh * 1.2f, COL_WHITE);
+        cv_text(cv, L"Play", s_font_label, cx + hh * 0.55f, ty, COL_WHITE, 1.0f);
+    }
 
     /* time: hh : mm  am/pm, the colon blinking with the seconds like m_banti */
-    wg_draw_digit_coin(cv, wg_s(26), wg_s(68), wg_s(15), h12 / 10 == 0 ? -1 : h12 / 10);
-    wg_draw_digit_coin(cv, wg_s(59), wg_s(68), wg_s(15), h12 % 10);
+    wg_draw_digit_coin(cv, wg_s(92), ty, tr, h12 / 10 == 0 ? -1 : h12 / 10);
+    wg_draw_digit_coin(cv, wg_s(125), ty, tr, h12 % 10);
     if (sec & 1) {
-        cv_badge(cv, wg_s(81), wg_s(62), wg_s(3.2f), wg_s(3.2f), COL_COLON, COL_DOT_RIM, FALSE);
-        cv_badge(cv, wg_s(81), wg_s(75), wg_s(3.2f), wg_s(3.2f), COL_COLON, COL_DOT_RIM, FALSE);
+        cv_badge(cv, wg_s(147), ty - wg_s(6), wg_s(3.2f), wg_s(3.2f), COL_COLON, COL_DOT_RIM, FALSE);
+        cv_badge(cv, wg_s(147), ty + wg_s(7), wg_s(3.2f), wg_s(3.2f), COL_COLON, COL_DOT_RIM, FALSE);
     }
-    wg_draw_digit_coin(cv, wg_s(103), wg_s(68), wg_s(15), min / 10);
-    wg_draw_digit_coin(cv, wg_s(136), wg_s(68), wg_s(15), min % 10);
-    cv_badge(cv, wg_s(172), wg_s(68), wg_s(16), wg_s(16), COL_AMPM_FILL, COL_DATE_RIM, FALSE);
-    cv_text(cv, hour < 12 ? L"am" : L"pm", s_font_label, wg_s(172), wg_s(67), COL_AMPM_TEXT, 1.0f);
+    wg_draw_digit_coin(cv, wg_s(169), ty, tr, min / 10);
+    wg_draw_digit_coin(cv, wg_s(202), ty, tr, min % 10);
+    cv_badge(cv, wg_s(238), ty, wg_s(16), wg_s(16), COL_AMPM_FILL, COL_DATE_RIM, FALSE);
+    cv_text(cv, hour < 12 ? L"am" : L"pm", s_font_label, wg_s(238), ty - wg_s(1), COL_AMPM_TEXT, 1.0f);
 
-    /* controls */
-    for (i = 0; i < WG_BTN_NUM; i++) {
-        f32 grow = (s_down == i) ? 0.92f : (s_hot == i) ? 1.1f : 1.0f;
-        f32 cx = wg_s(s_btn_cx[i]), cy = wg_s(WG_BTN_CY), r = wg_s(WG_BTN_R) * grow;
-
-        if (i == WG_BTN_PLAY) {
-            f32 hw = wg_s(WG_PLAY_HW) * grow;
-            cv_badge(cv, cx, cy, hw, r, s_hot == i ? COL_PLAY_HOT : COL_PLAY_FILL, COL_PLAY_RIM, FALSE);
-            cv_icon(cv, ICON_PLAY, cx - hw + r * 1.05f, cy, r * 1.25f, COL_WHITE);
-            cv_text(cv, L"Play", s_font_label, cx + r * 0.45f, cy, COL_WHITE, 1.0f);
-        } else {
-            cv_badge(cv, cx, cy, r, r, s_hot == i ? COL_BTN_HOT : COL_BTN_FILL, COL_BTN_RIM, FALSE);
-            cv_icon(cv, icons[i], cx, cy, r * 1.45f, COL_BTN_ICON);
-        }
-    }
+    wg_render_drawer(cv, &l);
 }
 
 /* ---- window ---- */
@@ -460,7 +562,7 @@ static void wg_place_and_paint(int force) {
 
     /* redraw only when something visible changed */
     pc_idle_get_clock(&hour, &min, &sec, &weekday, &month, &day);
-    key = ((((month * 32 + day) * 24 + hour) * 60 + min) * 2 + (sec & 1)) * 64 + (s_hot + 1) * 8 + (s_down + 1);
+    key = ((((((month * 32 + day) * 24 + hour) * 60 + min) * 2 + (sec & 1)) * 16) + (s_hot + 1)) * 16 + (s_down + 1);
     if (!force && key == s_drawn_key) return;
     s_drawn_key = key;
 
@@ -488,20 +590,138 @@ static void wg_place_and_paint(int force) {
 
 static int wg_hit(int x, int y) {
     f32 fx = (f32)x, fy = (f32)y;
+    wg_layout l;
     int i;
 
-    for (i = 0; i < WG_BTN_NUM; i++) {
-        f32 dx = fabsf(fx - wg_s(s_btn_cx[i]));
-        f32 dy = fabsf(fy - wg_s(WG_BTN_CY));
-        f32 hw = wg_s(i == WG_BTN_PLAY ? WG_PLAY_HW : WG_BTN_R);
-        if (dx <= hw && dy <= wg_s(WG_BTN_R)) return i;
+    wg_get_layout(&l);
+    if (fabsf(fx - wg_s(WG_PLAY_CX)) <= wg_s(WG_PLAY_HW) && fabsf(fy - wg_s(l.time_cy)) <= wg_s(WG_TIME_R)) {
+        return WG_BTN_PLAY;
+    }
+    if (fx >= wg_s(WG_DRAWER_X0) && fx <= wg_s(WG_DRAWER_X1)) {
+        f32 top = wg_s(l.drawer_top);
+        f32 h = wg_s(l.drawer_h > WG_DRAWER_HOVER ? l.drawer_h : WG_DRAWER_HOVER);
+
+        if (fy < top || fy > top + h) return WG_BTN_NONE;
+        if (l.open > 0.9f) {
+            for (i = 0; i < WG_DRAWER_BTNS; i++) {
+                f32 dx = fx - wg_s(WG_BTN_X0 + WG_BTN_STEP * i);
+                f32 dy = fy - (top + wg_s(l.drawer_h) * 0.5f);
+                if (dx * dx + dy * dy <= wg_s(WG_BTN_R) * wg_s(WG_BTN_R)) return i;
+            }
+        }
+        return WG_BTN_DRAWER;
     }
     return WG_BTN_NONE;
+}
+
+/* ---- drawer animation ---- */
+
+static f32 wg_approach(f32 v, f32 goal, f32 step) {
+    if (v < goal) return v + step < goal ? v + step : goal;
+    return v - step > goal ? v - step : goal;
+}
+
+static void wg_anim_step(void) {
+    DWORD now = GetTickCount();
+    f32 dt = (now - s_anim_last) / 1000.0f;
+    f32 hover_goal = (s_hot == WG_BTN_DRAWER || (s_hot >= 0 && s_hot < WG_DRAWER_BTNS)) ? 1.0f : 0.0f;
+
+    if (dt > 0.05f) dt = 0.05f;
+    s_anim_last = now;
+    s_hover_t = wg_approach(s_hover_t, hover_goal, dt / 0.12f);
+    s_open_t = wg_approach(s_open_t, s_open ? 1.0f : 0.0f, dt / 0.25f);
+    if (s_hover_t == hover_goal && s_open_t == (s_open ? 1.0f : 0.0f)) KillTimer(s_hwnd, WG_TIMER_ANIM);
+    wg_place_and_paint(TRUE);
+}
+
+static void wg_anim_start(void) {
+    s_anim_last = GetTickCount();
+    SetTimer(s_hwnd, WG_TIMER_ANIM, WG_ANIM_MS, NULL);
+}
+
+/* ---- tooltips: one tracking tooltip, moved to whatever is hovered ---- */
+
+static const WCHAR* wg_tip_text(int btn) {
+    switch (btn) {
+        case WG_BTN_ROT_L:    return L"Rotate camera left";
+        case WG_BTN_ROT_R:    return L"Rotate camera right";
+        case WG_BTN_ZOOM_OUT: return L"Zoom out";
+        case WG_BTN_ZOOM_IN:  return L"Zoom in";
+        case WG_BTN_RESET:    return L"Reset camera";
+        case WG_BTN_SETTINGS: return L"Settings";
+        case WG_BTN_PLAY:     return L"Play  (Ctrl+Alt+P)";
+        case WG_BTN_DRAWER:   return s_open ? L"Hide controls" : L"Camera controls and settings";
+    }
+    return NULL;
+}
+
+static void wg_tip_info(TOOLINFOW* ti) {
+    memset(ti, 0, sizeof(*ti));
+    ti->cbSize = sizeof(*ti);
+    ti->uFlags = TTF_TRACK | TTF_ABSOLUTE;
+    ti->hwnd = s_hwnd;
+    ti->uId = 1;
+}
+
+static void wg_tip_hide(void) {
+    TOOLINFOW ti;
+
+    KillTimer(s_hwnd, WG_TIMER_TIP);
+    if (s_tip != NULL && s_tip_for != WG_BTN_NONE) {
+        wg_tip_info(&ti);
+        SendMessageW(s_tip, TTM_TRACKACTIVATE, FALSE, (LPARAM)&ti);
+    }
+    s_tip_for = WG_BTN_NONE;
+}
+
+static void wg_tip_show(int btn) {
+    const WCHAR* text = wg_tip_text(btn);
+    TOOLINFOW ti;
+    wg_layout l;
+    RECT wr;
+    f32 cx, top;
+    DWORD size;
+
+    if (s_tip == NULL || text == NULL) return;
+    wg_tip_info(&ti);
+    ti.lpszText = (LPWSTR)text;
+    SendMessageW(s_tip, TTM_UPDATETIPTEXTW, 0, (LPARAM)&ti);
+
+    /* centered above the hovered thing */
+    wg_get_layout(&l);
+    if (btn < WG_DRAWER_BTNS) {
+        cx = WG_BTN_X0 + WG_BTN_STEP * btn;
+        top = l.drawer_top + l.drawer_h * 0.5f - WG_BTN_R;
+    } else if (btn == WG_BTN_PLAY) {
+        cx = WG_PLAY_CX;
+        top = l.time_cy - WG_TIME_R;
+    } else {
+        cx = (WG_DRAWER_X0 + WG_DRAWER_X1) * 0.5f;
+        top = l.drawer_top;
+    }
+    GetWindowRect(s_hwnd, &wr);
+    size = (DWORD)SendMessageW(s_tip, TTM_GETBUBBLESIZE, 0, (LPARAM)&ti);
+    {
+        MONITORINFO mi;
+        int x = wr.left + (int)wg_s(cx) - LOWORD(size) / 2;
+
+        /* keep it on screen; the widget hugs the right edge */
+        mi.cbSize = sizeof(mi);
+        GetMonitorInfoW(MonitorFromWindow(s_hwnd, MONITOR_DEFAULTTOPRIMARY), &mi);
+        if (x > mi.rcWork.right - LOWORD(size) - 4) x = mi.rcWork.right - LOWORD(size) - 4;
+        SendMessageW(s_tip, TTM_TRACKPOSITION, 0,
+                     MAKELPARAM(x, wr.top + (int)wg_s(top) - HIWORD(size) - (int)wg_s(4)));
+    }
+    SendMessageW(s_tip, TTM_TRACKACTIVATE, TRUE, (LPARAM)&ti);
+    s_tip_for = btn;
 }
 
 static void wg_set_hot(int hot) {
     if (hot != s_hot) {
         s_hot = hot;
+        wg_tip_hide();
+        if (hot != WG_BTN_NONE) SetTimer(s_hwnd, WG_TIMER_TIP, WG_TIP_DELAY_MS, NULL);
+        wg_anim_start();
         wg_place_and_paint(FALSE);
     }
 }
@@ -515,6 +735,10 @@ static void wg_press(int btn) {
         case WG_BTN_RESET:    pc_idle_user_reset(); break;
         case WG_BTN_SETTINGS: wg_open_settings(); break;
         case WG_BTN_PLAY:     pc_wallpaper_request_play(); break;
+        case WG_BTN_DRAWER:
+            s_open = !s_open;
+            wg_anim_start();
+            break;
     }
 }
 
@@ -530,6 +754,11 @@ static LRESULT CALLBACK wg_proc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lpara
             } else if (wparam == WG_TIMER_REPEAT) {
                 if (s_down != WG_BTN_NONE && s_down == s_hot) wg_press(s_down);
                 SetTimer(hwnd, WG_TIMER_REPEAT, WG_REPEAT_MS, NULL);
+            } else if (wparam == WG_TIMER_ANIM) {
+                wg_anim_step();
+            } else if (wparam == WG_TIMER_TIP) {
+                KillTimer(hwnd, WG_TIMER_TIP);
+                if (s_hot != WG_BTN_NONE && s_down == WG_BTN_NONE) wg_tip_show(s_hot);
             }
             return 0;
         case WM_MOUSEMOVE:
@@ -548,6 +777,7 @@ static LRESULT CALLBACK wg_proc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lpara
             return TRUE;
         case WM_LBUTTONDOWN:
         case WM_LBUTTONDBLCLK:
+            wg_tip_hide();
             s_down = wg_hit((short)LOWORD(lparam), (short)HIWORD(lparam));
             s_hot = s_down;
             if (s_down != WG_BTN_NONE) {
@@ -646,8 +876,10 @@ void pc_widget_attach(void) {
 
     if (!registered) {
         WNDCLASSW wc;
+        INITCOMMONCONTROLSEX icc = { sizeof(icc), ICC_WIN95_CLASSES };
         HDC screen = GetDC(NULL);
 
+        InitCommonControlsEx(&icc);
         s_dpi = GetDeviceCaps(screen, LOGPIXELSX);
         ReleaseDC(NULL, screen);
         wg_make_fonts();
@@ -666,7 +898,9 @@ void pc_widget_attach(void) {
         wg_place_and_paint(TRUE);
         return;
     }
-    if (s_hwnd != NULL && IsWindow(s_hwnd)) DestroyWindow(s_hwnd);
+    if (s_hwnd != NULL && IsWindow(s_hwnd)) DestroyWindow(s_hwnd); /* takes its tooltip with it */
+    s_tip = NULL;
+    s_tip_for = WG_BTN_NONE;
 
     s_parent = parent;
     /* A top-level per-pixel-alpha window owned by the desktop host. (As a
@@ -676,6 +910,18 @@ void pc_widget_attach(void) {
     s_hwnd = CreateWindowExW(WS_EX_LAYERED | WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW, L"ACWallpaperWidget", L"",
                              WS_POPUP, 0, 0, 1, 1, parent, NULL, GetModuleHandleW(NULL), NULL);
     if (s_hwnd == NULL) return;
+
+    /* tracking tooltip, positioned by hand: the widget never has focus and
+     * its shapes aren't rectangles, so automatic tooltips don't fit */
+    s_tip = CreateWindowExW(WS_EX_TOPMOST, TOOLTIPS_CLASSW, NULL, WS_POPUP | TTS_NOPREFIX | TTS_ALWAYSTIP,
+                            CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, s_hwnd, NULL,
+                            GetModuleHandleW(NULL), NULL);
+    if (s_tip != NULL) {
+        TOOLINFOW ti;
+        wg_tip_info(&ti);
+        ti.lpszText = (LPWSTR)L"";
+        SendMessageW(s_tip, TTM_ADDTOOLW, 0, (LPARAM)&ti);
+    }
 
     SetTimer(s_hwnd, WG_TIMER_TICK, WG_TICK_MS, NULL);
     wg_place_and_paint(TRUE);
@@ -687,6 +933,7 @@ void pc_widget_set_visible(int visible) {
     if (visible) {
         wg_place_and_paint(TRUE);
     } else {
+        wg_tip_hide();
         ShowWindow(s_hwnd, SW_HIDE);
         s_hot = s_down = WG_BTN_NONE;
         if (s_settings != NULL) DestroyWindow(s_settings);
@@ -697,6 +944,7 @@ void pc_widget_destroy(void) {
     if (s_settings != NULL && IsWindow(s_settings)) DestroyWindow(s_settings);
     if (s_hwnd != NULL && IsWindow(s_hwnd)) DestroyWindow(s_hwnd);
     s_hwnd = NULL;
+    s_tip = NULL;
     s_parent = NULL;
 }
 
