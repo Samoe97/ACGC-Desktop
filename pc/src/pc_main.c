@@ -11,6 +11,7 @@
 #include "pc_settings_menu.h"
 #include "pc_profiler.h"
 #include "pc_wallpaper.h"
+#include "pc_timelapse.h"
 #include "m_kankyo.h"
 
 /* prefer discrete GPU on laptops */
@@ -161,6 +162,7 @@ void pc_platform_update_window_size(void) {
 
 void pc_platform_swap_buffers(void) {
     pc_gx_draw_pending();
+    pc_timelapse_frame();
     SDL_GL_SwapWindow(g_pc_window);
 }
 
@@ -284,6 +286,12 @@ int main(int argc, char* argv[]) {
             printf("  --uber-shader       Disable shader specialization (single uber shader)\n");
             printf("  --wallpaper         Run as the desktop wallpaper (Ctrl+Alt+P play, Ctrl+Alt+W return)\n");
             printf("  --wallpaper-volume N  Idle wallpaper volume, 0-100%% of master (default 0)\n");
+            printf("  --timelapse         Record a sped-up day of the wallpaper to timelapse.mp4, then exit\n");
+            printf("  --timelapse-speed X   Clock speed-up while recording (default 360)\n");
+            printf("  --timelapse-start H   Starting hour (default 0)\n");
+            printf("  --timelapse-hours N   Game hours to record (default 24)\n");
+            printf("  --timelapse-out FILE  Output video (default timelapse.mp4)\n");
+            printf("  --ffmpeg PATH       ffmpeg executable (default: ffmpeg on PATH)\n");
             printf("  --help, -h          Show this help message\n");
             return 0;
         } else if (strcmp(argv[i], "--framelimit") == 0) {
@@ -334,6 +342,22 @@ int main(int argc, char* argv[]) {
             i++;
         } else if (strcmp(argv[i], "--wallpaper") == 0) {
             g_pc_wallpaper_enabled = 1;
+        } else if (strcmp(argv[i], "--timelapse") == 0) {
+            g_pc_timelapse = 1;
+            g_pc_wallpaper_enabled = 1;
+        } else if (strcmp(argv[i], "--timelapse-speed") == 0 && i + 1 < argc) {
+            double v = atof(argv[++i]);
+            if (v >= 1.0 && v <= 3600.0) g_pc_timelapse_speed = v;
+        } else if (strcmp(argv[i], "--timelapse-start") == 0 && i + 1 < argc) {
+            int v = atoi(argv[++i]);
+            if (v >= 0 && v <= 23) g_pc_timelapse_start = v;
+        } else if (strcmp(argv[i], "--timelapse-hours") == 0 && i + 1 < argc) {
+            int v = atoi(argv[++i]);
+            if (v >= 1 && v <= 24 * 7) g_pc_timelapse_hours = v;
+        } else if (strcmp(argv[i], "--timelapse-out") == 0 && i + 1 < argc) {
+            snprintf(g_pc_timelapse_out, sizeof(g_pc_timelapse_out), "%s", argv[++i]);
+        } else if (strcmp(argv[i], "--ffmpeg") == 0 && i + 1 < argc) {
+            snprintf(g_pc_timelapse_ffmpeg, sizeof(g_pc_timelapse_ffmpeg), "%s", argv[++i]);
         } else if (strcmp(argv[i], "--wallpaper-volume") == 0 && i + 1 < argc) {
             int v = atoi(argv[i + 1]);
             if (v >= 0 && v <= 100) g_pc_wallpaper_volume = v;

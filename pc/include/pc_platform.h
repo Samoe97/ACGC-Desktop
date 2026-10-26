@@ -83,6 +83,10 @@ extern u32           g_frame_limiter;
  * onto that after drift (sleep); force applies even a small difference. */
 void pc_os_set_clock_offset(s64 secs);
 s64  pc_os_get_clock_offset(void);
+/* timelapse: run the calendar clock scale x faster, from start_sec_of_day today */
+void   pc_os_start_fast_clock(double scale, int start_sec_of_day);
+double pc_os_fast_clock_elapsed(void);
+s64    pc_os_rtc_time(void);
 void pc_os_resync_clock(int force);
 
 extern int g_pc_window_w;

@@ -301,6 +301,7 @@ set(PC_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/src/pc_wallpaper.c
     ${CMAKE_CURRENT_SOURCE_DIR}/src/pc_idle.c
     ${CMAKE_CURRENT_SOURCE_DIR}/src/pc_widget.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/pc_timelapse.c
 )
 
 # =============================================================================

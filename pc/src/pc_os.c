@@ -75,6 +75,30 @@ s64 pc_os_get_clock_offset(void) {
     return s_clock_offset_secs;
 }
 
+/* Timelapse: the calendar clock (lbRTC) can run faster than real time from a
+ * chosen time of day. Only the calendar; frame pacing keeps using the real
+ * OSGetTime. */
+static double s_rtc_scale = 1.0;
+static s64 s_rtc_real_start = 0, s_rtc_game_start = 0;
+
+void pc_os_start_fast_clock(double scale, int start_sec_of_day) {
+    s64 now_secs = osGetTime() / (s64)GC_TIMER_CLOCK;
+
+    s_rtc_real_start = osGetTime();
+    s_rtc_game_start = ((now_secs / 86400) * 86400 + start_sec_of_day) * (s64)GC_TIMER_CLOCK;
+    s_rtc_scale = scale;
+}
+
+/* seconds of game time since the fast clock started */
+double pc_os_fast_clock_elapsed(void) {
+    return (double)(osGetTime() - s_rtc_real_start) * s_rtc_scale / (double)GC_TIMER_CLOCK;
+}
+
+s64 pc_os_rtc_time(void) {
+    if (s_rtc_scale == 1.0) return osGetTime();
+    return s_rtc_game_start + (s64)((double)(osGetTime() - s_rtc_real_start) * s_rtc_scale);
+}
+
 s64 OSGetTime(void) { return osGetTime(); }
 
 /* same as OSGetTime on PC (no time_adjust needed) */

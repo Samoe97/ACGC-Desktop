@@ -12,6 +12,7 @@ All game-code changes sit behind `#ifdef TARGET_PC`. The behaviour that only mat
 - [Idle mode](#idle-mode)
 - [The town clock](#the-town-clock)
 - [The desktop widget](#the-desktop-widget)
+- [Timelapse recording](#timelapse-recording)
 - [Game-code changes, file by file](#game-code-changes-file-by-file)
 - [Changes outside wallpaper mode](#changes-outside-wallpaper-mode)
 - [Troubleshooting](#troubleshooting)
@@ -49,6 +50,7 @@ The game's title screen already plays a "title demo": a live play scene in the p
 | `pc/src/pc_wallpaper.c` | Parents the game window into the desktop. Handles the hotkeys, the tray icon, switching modes, focus hand-off, and the clock resync timer. |
 | `pc/src/pc_idle.c` | Idle mode: the autopilot walker, the idle camera (including the user's rotate and zoom, and the map-bounds clamp), scene reload requests, and the clock getter for the widget. |
 | `pc/src/pc_widget.c` | The desktop clock widget: per-pixel-alpha rendering, hit testing, and the settings dialog with `wallpaper.ini`. |
+| `pc/src/pc_timelapse.c` | `--timelapse`: fast clock, frame capture and the ffmpeg pipe. |
 | `pc/src/pc_os.c` | The game clock (`osGetTime`): PC clock plus an offset, the overflow fix, and resync. |
 | `pc/include/pc_wallpaper.h`, `pc_idle.h`, `pc_widget.h` | The APIs of the three modules above. |
 | `pc/res/app.manifest` | Declares Windows 8+ support and Common Controls v6. |
@@ -171,6 +173,15 @@ The game clock is **PC clock + offset**. The `--time`/`--date` options and the c
 
 An earlier attempt drew the widget inside the game, using the real `m_banti` clock models. It was dropped: the emulated GX path maps 2D in widescreen differently from what the UI code assumes, and loading custom matrices partway through the font display list doesn't take reliably.
 
+## Timelapse recording
+
+`--timelapse` (which implies `--wallpaper`) records the idle scene over a game day, using `pc_timelapse.c`.
+
+- **Start:** recording waits about 5 s (300 frames) after the idle scene appears, so it has loaded and faded in.
+- **Fast clock:** `pc_os_start_fast_clock` then runs only the calendar clock fast, from 10 game minutes before the start hour. `lbRTC_GetHardTime` reads `pc_os_rtc_time()`. `OSGetTime`, which paces frames, stays real time, so the game still runs at normal speed and only the clock races. The 10-minute warm-up lets the lighting catch up with the clock jump before the first frame.
+- **Capture:** every game minute, `pc_timelapse_frame` (called just before the buffer swap) reads the back buffer with `glReadPixels`. It writes raw RGBA to `ffmpeg` through `_popen`, which flips the image, scales it to 1080p and encodes H.264 at 30 fps. A day is 1,440 frames, or 48 s of video. When the last frame is written, the program exits.
+- **Camera:** in `pc_idle.c` the walker tours the town at the slowest pace (`IDLE_TL_SPEED`). It always heads for a neighbouring acre, skips villager visits and stops only briefly. The camera trails it with a longer lag (`IDLE_TL_FOLLOW_SEC`), so the video drifts across different parts of the village. The midnight scene reload is skipped.
+
 ## Game-code changes, file by file
 
 | File | Change | Why |
@@ -194,6 +205,7 @@ An earlier attempt drew the widget inside the game, using the real `m_banti` clo
 | `src/game/m_actor.c` | Larger cull depth while idle | Distant actors draw and move |
 | `src/actor/ac_train0_move.c_inc` | Train tolerates one row off while idle | Train visible from further away |
 | `include/sys_dynamic.h` | Bigger per-frame display-list buffers on PC | See below |
+| `src/lb_rtc.c` | `lbRTC_GetHardTime` reads `pc_os_rtc_time()` on PC | Timelapse fast clock |
 
 PC layer: `pc_main.c` (flags, hidden startup window, input gating, init/shutdown hooks), `pc_pause_menu.c` (*Quit Game* becomes *Return to Desktop* in wallpaper mode), `pc_pad.c` (neutral input while idle), `pc_audio.c` (idle volume), `pc_os.c` (clock), `pc_platform.h` (clock API), `CMakeLists.txt` (new sources; links `shell32`, `comctl32`).
 

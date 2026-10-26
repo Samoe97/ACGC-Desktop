@@ -12,6 +12,7 @@
 #include "pc_platform.h"
 #include "pc_idle.h"
 #include "pc_wallpaper.h"
+#include "pc_timelapse.h"
 
 #include "m_player_lib.h"
 #include "m_event.h"
@@ -65,6 +66,11 @@
 #define IDLE_USER_ZOOM_MAX  1.25f    /* further out would see past the 5x5 ground */
 #define IDLE_USER_EASE_SEC  0.35f
 
+/* timelapse: the walker tours from acre to acre at the slowest pace, with
+ * short stops, and the camera trails it more lazily than usual */
+#define IDLE_TL_SPEED       0.35f
+#define IDLE_TL_FOLLOW_SEC  5.0f
+
 typedef struct {
     int    have_target;
     f32    target_x, target_z;
@@ -101,6 +107,11 @@ f32 pc_idle_get_speed(void) {
     return s_speed;
 }
 
+/* the pace actually used: the setting, or the timelapse's own */
+static f32 idle_speed(void) {
+    return g_pc_timelapse ? IDLE_TL_SPEED : s_speed;
+}
+
 int pc_idle_active(void) {
     return g_pc_wallpaper_active && mEv_IsTitleDemo();
 }
@@ -112,7 +123,7 @@ void pc_idle_request_reload(void) {
 int pc_idle_take_reload_request(void) {
     /* a new day means new weather, events and maybe a new season */
     int day = Common_Get(time.rtc_time.day);
-    if (s_idle.last_day != 0 && day != s_idle.last_day) s_idle.reload_requested = TRUE;
+    if (s_idle.last_day != 0 && day != s_idle.last_day && !g_pc_timelapse) s_idle.reload_requested = TRUE;
     s_idle.last_day = day;
 
     if (!s_idle.reload_requested) return FALSE;
@@ -164,7 +175,12 @@ static void idle_pick_spot(const xyz_t* from, f32* x, f32* z) {
     for (tries = 0; tries < 12; tries++) {
         int tx, tz;
 
-        if (fqrand() < 0.7f) {
+        if (g_pc_timelapse) {
+            /* a tour: always on to a neighbouring acre */
+            tx = bx + (int)RANDOM_F(3) - 1;
+            tz = bz + (int)RANDOM_F(3) - 1;
+            if (tx == bx && tz == bz) continue;
+        } else if (fqrand() < 0.7f) {
             tx = bx + (int)RANDOM_F(3) - 1;
             tz = bz + (int)RANDOM_F(3) - 1;
         } else {
@@ -186,7 +202,7 @@ static void idle_pick_spot(const xyz_t* from, f32* x, f32* z) {
 }
 
 static void idle_new_target(GAME_PLAY* play, const xyz_t* pos) {
-    s_idle.target_npc = (fqrand() < IDLE_NPC_CHANCE) ? idle_pick_npc(play, pos) : NULL;
+    s_idle.target_npc = (!g_pc_timelapse && fqrand() < IDLE_NPC_CHANCE) ? idle_pick_npc(play, pos) : NULL;
     if (s_idle.target_npc == NULL) {
         idle_pick_spot(pos, &s_idle.target_x, &s_idle.target_z);
     }
@@ -241,7 +257,8 @@ void pc_idle_title_demo_move(GAME_PLAY* play) {
     if (dist < arrive) {
         /* linger: longer when watching a villager */
         s_idle.have_target = FALSE;
-        s_idle.wait_sec = ((s_idle.target_npc != NULL ? 5.0f : 1.5f) + RANDOM_F(s_idle.target_npc != NULL ? 6.0f : 3.0f)) / s_speed;
+        s_idle.wait_sec = ((s_idle.target_npc != NULL ? 5.0f : 1.5f) + RANDOM_F(s_idle.target_npc != NULL ? 6.0f : 3.0f)) / idle_speed();
+        if (g_pc_timelapse) s_idle.wait_sec = 1.0f + RANDOM_F(2.0f); /* keep touring */
         mPlib_SetData1_controller_data_for_title_demo(0, 0, 0.0f, 0.0f);
         return;
     }
@@ -252,14 +269,14 @@ void pc_idle_title_demo_move(GAME_PLAY* play) {
         s_idle.stuck_sec = 0.0f;
     } else {
         s_idle.stuck_sec += dt;
-        if (s_idle.stuck_sec > IDLE_STUCK_SEC / s_speed) {
+        if (s_idle.stuck_sec > IDLE_STUCK_SEC / idle_speed()) {
             s_idle.have_target = FALSE;
             s_idle.wait_sec = 1.0f + RANDOM_F(2.0f);
         }
     }
 
     yaw = atans_table(dz, dx);
-    stick = IDLE_WALK_STICK * s_speed;
+    stick = IDLE_WALK_STICK * idle_speed();
     if (stick < IDLE_WALK_STICK_MIN) stick = IDLE_WALK_STICK_MIN;
     if (stick > IDLE_WADE_STICK) stick = IDLE_WADE_STICK;
 
@@ -370,7 +387,7 @@ int pc_idle_camera(GAME_PLAY* play, xyz_t* center, xyz_t* eye, f32* fov_y, f32* 
 
     dt = play->game.graph->dt;
     if (dt > 0.1f) dt = 0.1f;
-    s_idle.time_sec += dt * s_speed; /* drives the slow sway/zoom drift */
+    s_idle.time_sec += dt * idle_speed(); /* drives the slow sway/zoom drift */
 
     if (!s_idle.cam_init) {
         /* new scene or just went idle: start on the walker */
@@ -379,7 +396,7 @@ int pc_idle_camera(GAME_PLAY* play, xyz_t* center, xyz_t* eye, f32* fov_y, f32* 
         s_idle.user_zoom = s_idle.user_zoom_target;
         s_idle.cam_init = TRUE;
     } else {
-        follow = 1.0f - expf(-dt * s_speed / IDLE_CAM_FOLLOW_SEC);
+        follow = 1.0f - expf(-dt * idle_speed() / (g_pc_timelapse ? IDLE_TL_FOLLOW_SEC : IDLE_CAM_FOLLOW_SEC));
         s_idle.cam_center.x += (player->actor_class.world.position.x - s_idle.cam_center.x) * follow;
         s_idle.cam_center.y += (player->actor_class.world.position.y - s_idle.cam_center.y) * follow;
         s_idle.cam_center.z += (player->actor_class.world.position.z - s_idle.cam_center.z) * follow;
@@ -407,10 +424,10 @@ int pc_idle_camera(GAME_PLAY* play, xyz_t* center, xyz_t* eye, f32* fov_y, f32* 
     dist += swing * IDLE_CAM_DIST_SWING * sinf(s_idle.time_sec * (2.0f * F_PI / 170.0f));
     pitch = (pitch + swing * 3.0f * sinf(s_idle.time_sec * (2.0f * F_PI / 230.0f))) * (F_PI / 180.0f);
     yaw = (s_idle.user_yaw + IDLE_CAM_YAW_SWING * sinf(s_idle.time_sec * (2.0f * F_PI / 300.0f))) * (F_PI / 180.0f);
+    *center = s_idle.cam_center;
     horiz = dist * cosf(pitch);
 
     /* the gameplay camera looks north (-z) from the south; keep that, swayed */
-    *center = s_idle.cam_center;
     eye->x = center->x + horiz * sinf(yaw);
     eye->y = center->y + dist * sinf(pitch);
     eye->z = center->z + horiz * cosf(yaw);

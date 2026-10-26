@@ -60,7 +60,13 @@ static BOOL l_lbRTC_IsSampled;
  * @return OSTime representing the current hardware time in ticks.
  */
 static OSTime lbRTC_GetHardTime() {
+#ifdef TARGET_PC
+  /* the calendar clock, which the timelapse recorder can speed up */
+  extern s64 pc_os_rtc_time(void);
+  return pc_os_rtc_time();
+#else
   return OSGetTime();
+#endif
 }
 
 /**

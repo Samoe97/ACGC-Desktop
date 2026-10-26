@@ -107,6 +107,19 @@ music_volume = 0
 | `--rain [light\|normal\|heavy]` | Force rain (handy for previewing the weather) |
 | `--time H[:M[:S]]`, `--date M/D[/Y]` | Start the clock at this time/date (it keeps ticking) |
 | `--verbose` | Diagnostic logging |
+| `--timelapse` | Record a sped-up day of the wallpaper scene to `timelapse.mp4`, then exit (needs [ffmpeg](https://ffmpeg.org/)) |
+| `--timelapse-speed X`, `--timelapse-start H`, `--timelapse-hours N` | Clock speed-up while recording (default 360: 6 game minutes per second), starting hour (default 0) and length in game hours (default 24) |
+| `--timelapse-out FILE`, `--ffmpeg PATH` | Output video, and the ffmpeg executable if it isn't on `PATH` |
+
+### Timelapse videos
+
+`--timelapse` turns the idle scene into a recorder. The town's clock runs fast while the camera slowly tours the village from acre to acre. One frame per game minute goes to ffmpeg, giving a 1080p, 30 fps video where a full day takes 48 seconds. At the default speed (6 game minutes per real second), recording a day takes about 4 minutes.
+
+```bash
+AnimalCrossing.exe --timelapse --ffmpeg "C:\path\to\ffmpeg.exe"
+```
+
+Recording never touches your save, like the rest of idle mode.
 
 All of the [PC port's options](docs/pc-port.md#command-line-options) work too.
 
