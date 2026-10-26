@@ -1,5 +1,13 @@
 static int Player_actor_request_main_door(GAME* game, const xyz_t* pos, s16 angle_y, int type, void* label,
                                           int priority) {
+#ifdef TARGET_PC
+    /* Wallpaper idle: the hidden walker must never go indoors (it would end
+     * up stuck in a shop conversation that waits for a button press). */
+    {
+        extern int pc_idle_active(void);
+        if (pc_idle_active()) return FALSE;
+    }
+#endif
     if (Player_actor_check_request_main_able(game, mPlayer_INDEX_DOOR, priority)) {
         PLAYER_ACTOR* player = GET_PLAYER_ACTOR_GAME(game);
 

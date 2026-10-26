@@ -2,6 +2,8 @@
 
 PC port of Animal Crossing GameCube built on top of a 99.52% complete C decompilation.
 
+> **Desktop wallpaper mode** (`--wallpaper`: `pc_wallpaper.c`, `pc_idle.c`, `pc_widget.c`) is documented separately in [docs/wallpaper.md](../docs/wallpaper.md), including every change it makes to decomp files.
+
 ## Architecture Overview
 
 The game's rendering has 3 tiers:

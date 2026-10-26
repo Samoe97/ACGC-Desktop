@@ -52,7 +52,7 @@
 
 /* The map ends at the outer edge of the border cliffs; past it is void the
  * gameplay camera never sees. The view's ground footprint is kept inside. */
-#define IDLE_BEND_REACH     1.4f     /* top-of-screen reach vs. a flat world (tuned by eye) */
+#define IDLE_BEND_REACH     1.7f     /* top-of-screen reach vs. a flat world (tuned by eye) */
 #define IDLE_MAP_MIN_X      0.0f
 #define IDLE_MAP_MAX_X      (mFI_BK_WORLDSIZE_X_F * BLOCK_X_NUM)
 #define IDLE_MAP_MIN_Z      0.0f

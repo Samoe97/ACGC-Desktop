@@ -1,125 +1,149 @@
-# Animal Crossing PC Port
+# ACGC Desktop
 
-A native PC port of Animal Crossing (GameCube) built on top of the [ac-decomp](https://github.com/ACreTeam/ac-decomp) decompilation project.
+**Animal Crossing (GameCube) as your live desktop wallpaper.**
 
-The game's original C code runs natively on x86, with a custom translation layer replacing the GameCube's GX graphics API with OpenGL 3.3.
+Your own town, from your own save, runs behind your desktop icons in real time. A slow, zoomed-out camera drifts between acres and stops to watch your villagers. The seasons, the time of day and the weather follow your PC's clock, and the game's own clock sits in the corner of the desktop. When you want to play, click **Play** (or press <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>P</kbd>) and the wallpaper becomes the game. Press <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>W</kbd> to send it back to the desktop.
 
-This repository does not contain any game assets or assembly whatsoever. An existing copy of the game is required.
+This is a fork of [ACGC-PC-Port](https://github.com/flyngmt/ACGC-PC-Port) by FlyingMeta. That port runs the [ac-decomp](https://github.com/ACreTeam/ac-decomp) decompilation natively on Windows, and this fork adds the wallpaper mode on top. Without `--wallpaper`, the program behaves like the regular PC port.
 
-Supported versions: GAFE01_00: Rev 0 (USA)
+> This repository contains no game assets. You need your own copy of the game:
+> **Animal Crossing (USA), GAFE01 Rev 0**, as an ISO, GCM or CISO disc image.
 
-## Quick Start (Pre-built Release)
+## Features
 
-Pre-built releases are available on the [Releases](https://github.com/flyngmt/ACGC-PC-Port/releases) page. No build tools required.
+- **Live wallpaper.** The game renders behind your desktop icons and doesn't take input while idle. Clicks on the desktop go to the desktop as usual.
+- **Your town, never your save.** The idle scene is the game's title demo, which loads your town from the save and discards everything when you start playing. Idle mode never writes to your save file.
+- **Attract-mode camera.** An invisible walker wanders your town so terrain, trees, buildings and villagers load around it. A slow, swaying camera follows it from above.
+  - **Walker behaviour:** it crosses acres, visits villagers and stays out of buildings.
+  - **Loaded area:** the full 3×3 acres around the walker load, so nothing pops in at the edges.
+  - **No void:** the camera never shows the area past the edge of the map.
+- **Real time.** Idle mode uses your PC's date and time and your town's real weather and season. (The stock title demo forces fixed demo days.)
+  - **Kept in sync:** the clock resyncs every minute and after the PC wakes from sleep.
+  - **Custom clock:** set any date and time in the settings. A custom clock keeps running from the time you set.
+- **Desktop clock widget**, drawn in the style of the in-game clock:
+  - **Clock:** date, weekday, time and am/pm.
+  - **Camera:** rotate, zoom (all the way in matches the normal gameplay camera) and reset.
+  - **Settings** and **Play** buttons.
+- **Weather that fills the screen.** Rain, snow, cherry blossoms and falling leaves cover the whole view and stay put in the world, rather than following the camera.
+- **Tray icon** with Play, Return to wallpaper and Quit.
 
-1. Download and extract the latest release zip
-2. Place your disc image in the `rom/` folder
-3. Run `AnimalCrossing.exe`
+## Quick start
 
-The game reads all assets directly from the disc image at startup. No extraction or preprocessing step is needed.
+1. Build the game (see [Building](#building)). The executable ends up in `pc/build32/bin/`.
+2. Put your disc image in `pc/build32/bin/rom/`. If you have a Dolphin save, put the `.gci` files in `pc/build32/bin/save/`.
+3. Run the game as a wallpaper:
+   ```bash
+   AnimalCrossing.exe --wallpaper
+   ```
 
-## Building from Source
+To start it with Windows, put a shortcut to `AnimalCrossing.exe --wallpaper` in your Startup folder (<kbd>Win</kbd>+<kbd>R</kbd>, then `shell:startup`).
 
-Only needed if you want to modify the code. Otherwise, use the [pre-built release](https://github.com/flyngmt/ACGC-PC-Port/releases) above.
+## Using it
 
-### Requirements
+| | Wallpaper (idle) | Playing |
+|---|---|---|
+| Switch | **Play** button, <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>P</kbd>, or the tray menu | <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>W</kbd> or the tray menu |
+| Window | Behind the desktop icons, full screen | Borderless fullscreen with focus |
+| Input | None (the desktop keeps working) | Keyboard and controller, as in the PC port |
+| Audio | Muted (see `--wallpaper-volume`) | Normal |
 
-- **MSYS2** (https://www.msys2.org/)
-- **Animal Crossing (USA) disc image** (ISO, GCM, or CISO format)
+From the wallpaper, **Play** opens the regular title screen; choose *Start Game* to load your save as usual. Double-clicking the tray icon also switches modes. *Quit* in the tray menu closes the game.
 
-### MSYS2 Packages
+> [!IMPORTANT]
+> **Save in the game before you press <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>W</kbd>.** Returning to the wallpaper doesn't save for you yet. If you quit without saving, Mr. Resetti will have something to say next time.
 
-Open **MSYS2 MINGW32** from your Start menu and install:
+### The widget
 
-```bash
-pacman -S mingw-w64-i686-gcc mingw-w64-i686-cmake mingw-w64-i686-SDL2 mingw-w64-i686-make
+The panel in the bottom-right corner of your desktop shows the town's clock. Below the clock is a row of buttons:
+
+| Button | Action |
+|---|---|
+| ↺ ↻ | Rotate the camera (up to ±35°). Hold to keep turning. |
+| − + | Zoom out / in. Fully zoomed in matches the regular gameplay camera. Hold to keep zooming. |
+| ⌂ | Reset the camera. |
+| ⚙ | Settings. |
+| ▶ Play | Switch to playing. |
+
+### Settings
+
+The ⚙ button opens the settings dialog:
+
+- **Town clock:** use this PC's date and time, or a custom date and time. A custom clock keeps ticking from the time you set. Changing the clock reloads the idle scene, so the season and lighting update.
+- **Clock size:** the size of the widget: Small (80%), Normal (100%), Large (120%) or Extra large (150%).
+
+The settings are saved in `wallpaper.ini` next to the executable:
+
+```ini
+# Town clock = this PC's clock + clock_offset_seconds (0 = the PC's date and time)
+clock_offset_seconds = 0
+# Size of the clock/controls widget (1.0 = normal)
+widget_scale = 1.20
 ```
 
-### Build Steps
-
-1. Clone the repository:
-   ```bash
-   git clone https://github.com/flyngmt/ACGC-PC-Port.git
-   cd ACGC-PC-Port
-   ```
-
-2. Build (from **MSYS2 MINGW32** shell):
-   ```bash
-   ./build_pc.sh
-   ```
-
-3. Place your disc image in the `rom/` folder:
-   ```
-   pc/build32/bin/rom/YourGame.ciso
-   ```
-
-4. Run:
-   ```bash
-   pc/build32/bin/AnimalCrossing.exe
-   ```
-
-## Controls
-
-Keyboard bindings are customizable via `keybindings.ini` (next to the executable). Mouse buttons (Mouse1/Mouse2/Mouse3) can also be assigned.
-
-### Keyboard (defaults)
-
-| Key | Action |
-|-----|--------|
-| WASD | Move (left stick) |
-| Arrow Keys | Camera (C-stick) |
-| Space | A button |
-| Left Shift | B button |
-| Enter | Start |
-| X | X button |
-| Y | Y button |
-| Q / E | L / R triggers |
-| Z | Z trigger |
-| I / J / K / L | D-pad (up/left/down/right) |
-
-### Gamepad
-
-SDL2 game controllers are supported with automatic hotplug detection. Button mapping follows the standard GameCube layout.
-
-## Command Line Options
+### Command-line options
 
 | Flag | Description |
-|------|-------------|
-| `--verbose` | Enable diagnostic logging |
-| `--no-framelimit` | Disable frame limiter (unlocked FPS) |
-| `--model-viewer [index]` | Launch debug model viewer (structures, NPCs, fish) |
-| `--time HOUR` | Override in-game hour (0-23) |
+|---|---|
+| `--wallpaper` | Run as the desktop wallpaper |
+| `--wallpaper-volume N` | Volume while idle, as 0–100% of the master volume (default 0, muted) |
+| `--rain [light\|normal\|heavy]` | Force rain (handy for previewing the weather) |
+| `--time H[:M[:S]]`, `--date M/D[/Y]` | Start the clock at this time/date (it keeps ticking) |
+| `--verbose` | Diagnostic logging |
 
-## Settings
+All of the [PC port's options](docs/pc-port.md#command-line-options) work too.
 
-Graphics settings are stored in `settings.ini` and can be edited manually or through the in-game options menu:
+## Building
 
-- Resolution (up to 4K)
-- Fullscreen toggle
-- VSync
-- MSAA (anti-aliasing)
-- Texture Loading/Caching (No need to enable if you aren't using a texture pack)
+You need [MSYS2](https://www.msys2.org/) and its **MINGW32** environment. The game must be built as 32-bit.
 
-## Texture Packs
+```bash
+pacman -S --needed mingw-w64-i686-gcc mingw-w64-i686-cmake mingw-w64-i686-SDL2 mingw-w64-i686-ninja
+```
 
-Custom textures can be placed in `texture_pack/`. Dolphin-compatible format (XXHash64, DDS).
+From the **MSYS2 MINGW32** shell:
 
-I highly recommend the following texture pack from the talented artists of Animal Crossing community.
+```bash
+git clone <this repository>
+cd ACGC-PC-Port/pc
+mkdir -p build32 && cd build32
+cmake .. -G Ninja
+ninja
+mkdir -p bin/rom bin/save
+```
 
-[HD Texture Pack](https://forums.dolphin-emu.org/Thread-animal-crossing-hd-texture-pack-version-23-feb-22nd-2026)
+MSYS2 no longer ships `mingw-w64-i686-make`, so the upstream `build_pc.sh` (which uses `mingw32-make`) may not work. Ninja does the same job.
 
-## Save Data
+## Requirements
 
-Save files are stored in `save/` using the standard GCI format, compatible with Dolphin emulator saves. Place a Dolphin GCI export in the save directory to import an existing save.
+- Windows 10 or 11. The wallpaper uses Explorer's desktop windows, including the new layout in Windows 11 24H2.
+- An OpenGL 3.3 GPU.
+- *Animal Crossing* (USA, GAFE01 Rev 0) disc image.
+
+## Known limitations
+
+- **Returning to the wallpaper doesn't save the game** (see above).
+- **Primary monitor only.**
+- **The wallpaper always renders.** It runs at 60 fps and doesn't pause when a fullscreen app is in front.
+- **The camera is simple.** It wanders and visits villagers. It doesn't yet seek out events such as K.K. Slider, fireworks or the Bug-Off.
+- **The walker occasionally gets stuck** behind a river or cliff. After a few seconds it gives up and heads somewhere else.
+
+## Documentation
+
+- [docs/wallpaper.md](docs/wallpaper.md): how the wallpaper mode works, a file-by-file list of every change to the game code, troubleshooting.
+- [docs/pc-port.md](docs/pc-port.md): the upstream PC port's README (controls, settings, texture packs, saves).
+- [pc/DOCUMENTATION.md](pc/DOCUMENTATION.md): the PC port's developer documentation.
+- [FAQ.md](FAQ.md): the upstream PC port FAQ.
 
 ## Credits
 
-This project would not be possible without the work of the [ACreTeam](https://github.com/ACreTeam) decompilation team. Their complete C decompilation of Animal Crossing is the foundation this port is built on.
+- [ACreTeam](https://github.com/ACreTeam) for the [ac-decomp](https://github.com/ACreTeam/ac-decomp) decompilation that all of this is built on.
+- [FlyingMeta](https://github.com/flyngmt) for [ACGC-PC-Port](https://github.com/flyngmt/ACGC-PC-Port).
+- Animal Crossing is © Nintendo. This project isn't affiliated with or endorsed by Nintendo.
 
-## AI Notice
+## License
 
-AI tools such as Claude were used in this project (PC port code only).
+Same as the upstream port; see [LICENSE](LICENSE). The decompilation code is CC0, and the PC layer (`pc/` and the `#ifdef TARGET_PC` additions, which include this wallpaper mode) is MIT.
 
-## FAQ
+## AI notice
 
-See [FAQ](FAQ.md) for more info.
+The wallpaper mode was written with the help of Claude (Anthropic), in the same spirit as the upstream port's AI notice.
