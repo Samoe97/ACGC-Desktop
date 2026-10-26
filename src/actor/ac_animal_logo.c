@@ -418,8 +418,16 @@ static void aAL_pc_game_start_wait(ANIMAL_LOGO_ACTOR* actor, GAME* game) {
         actor->pc_cursor_cooldown = 10.0f;
         pc_settings_menu_enter();
         break;
-      case 2: /* Quit Game */
-        g_pc_running = 0;
+      case 2: /* Quit Game (Return to Desktop in wallpaper mode) */
+        {
+          extern int g_pc_wallpaper_enabled;
+          extern void pc_wallpaper_request_wallpaper(void);
+          if (g_pc_wallpaper_enabled) {
+            pc_wallpaper_request_wallpaper(); /* back to the wallpaper, keep running */
+          } else {
+            g_pc_running = 0;
+          }
+        }
         actor->pc_cursor_cooldown = 10.0f;
         break;
     }
@@ -795,7 +803,9 @@ static void aAL_pc_menu_draw(ANIMAL_LOGO_ACTOR* actor, GAME* game) {
   static const u32 dim_g[5] = {  40,  50,  40,  50,  50 };
   static const u32 dim_b[5] = {  40,  30,  60,  70,  60 };
 
-  static const char* const labels[3] = { "Start Game", "Options", "Quit Game" }; // me when const
+  extern int g_pc_wallpaper_enabled;
+  const char* const labels[3] = { "Start Game", "Options",
+                                  g_pc_wallpaper_enabled ? "Return to Desktop" : "Quit Game" };
 
   f32 y_base = 135.0f;
   f32 line_h = 18.0f;

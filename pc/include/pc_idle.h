@@ -29,6 +29,11 @@ void pc_idle_user_rotate(f32 degrees);
 void pc_idle_user_zoom(f32 delta);   /* zoom level: 0 = gameplay camera, 1 = default */
 void pc_idle_user_reset(void);
 
+/* "Camera speed" setting (1.0 = the original pace; default 0.6). Scales the
+ * walker's pace, its pauses, the camera's follow lag and drift together. */
+void pc_idle_set_speed(f32 speed);
+f32  pc_idle_get_speed(void);
+
 /* Restart the idle scene (fade to a fresh title-demo scene) so a changed
  * clock's season, trees and lighting take effect. */
 void pc_idle_request_reload(void);

@@ -92,6 +92,7 @@ The title demo already drives its stand-in player with fake controller data (`mP
 - **Hidden player:** `Player_actor_draw` returns early, and the shadow is turned off (`shape_info.draw_shadow`), then restored when idle mode ends.
 - **No buildings:** `Player_actor_request_main_door` refuses while idle. Otherwise the walker could wander into a shop and get stuck in a conversation that waits for a button press.
 - **Frozen demo timer:** `title_demo_move` returns before advancing `S_tdemo_time`, so the demo never fades to the next one.
+- **Camera speed** (`pc_idle_set_speed`, the *Camera speed* setting): Very slow 0.35, Slow 0.6 (default), Normal 1.0, Fast 1.5. It scales the walk (stick 34 × speed, at least 14, just above the dead zone), the pauses and the stuck timer (both ÷ speed), the camera's follow lag, and the clock that drives the sway and zoom drift. Acre crossings still push at full tilt, because the game requires it; the camera's lag smooths that out.
 
 ### The idle camera (`pc_idle_camera`)
 
@@ -147,7 +148,7 @@ The game clock is **PC clock + offset**. The `--time`/`--date` options and the c
 - **Window:** a top-level `WS_POPUP` tool window, **owned by** the desktop host (Progman on 24H2). An owned window always stays above its owner, so it sits right on the desktop, under every normal window. Transparent pixels let clicks through.
   > A *child* of Progman was tried first. 24H2's desktop composition accepted the image (`UpdateLayeredWindow` succeeded) but never showed it.
 - **Redraw:** a 250 ms timer redraws only when the minute, seconds parity, hover or press state changes. Rotate and zoom repeat while held.
-- **Settings dialog** (`wg_open_settings`): radio buttons for the PC or a custom clock, date and time pickers, and the clock size. Applying it saves `wallpaper.ini` and, for clock changes, requests a scene reload.
+- **Settings dialog** (`wg_open_settings`): radio buttons for the PC or a custom clock, date and time pickers, clock size and camera speed. Applying it saves `wallpaper.ini` (`clock_offset_seconds`, `widget_scale`, `camera_speed`). Only a change to the clock requests a scene reload.
 
 An earlier attempt drew the widget inside the game, using the real `m_banti` clock models. It was dropped: the emulated GX path maps 2D in widescreen differently from what the UI code assumes, and loading custom matrices partway through the font display list doesn't take reliably.
 
@@ -164,7 +165,7 @@ An earlier attempt drew the widget inside the game, using the real `m_banti` clo
 | `include/ac_weather.h` | Pool 600 on PC; `u16` particle id; area macros | Bigger weather pool |
 | `src/game/m_player.c` | `Player_actor_draw` skipped while idle | Hidden walker |
 | `src/game/m_player_main_door.c_inc` | Door requests refused while idle | Walker stays outdoors |
-| `src/actor/ac_animal_logo.c` | Logo and menu not drawn while idle | Clean wallpaper |
+| `src/actor/ac_animal_logo.c` | Logo and menu not drawn while idle; *Quit Game* becomes *Return to Desktop* in wallpaper mode | Clean wallpaper; don't close the program from the title menu |
 | `include/m_field_make.h` | `mFM_VISIBLE_BLOCK_NUM` 9 on PC | 3×3 loading |
 | `src/game/m_field_make.c` | Title demo gets 9 BG slots in wallpaper mode | 3×3 loading |
 | `src/game/m_field_info.c` | 3×3 slot selection; slot bound; `u16` bitfields; item-table row fix | 3×3 loading, vanishing trees |
@@ -175,7 +176,7 @@ An earlier attempt drew the widget inside the game, using the real `m_banti` clo
 | `src/actor/ac_train0_move.c_inc` | Train tolerates one row off while idle | Train visible from further away |
 | `include/sys_dynamic.h` | Bigger per-frame display-list buffers on PC | See below |
 
-PC layer: `pc_main.c` (flags, hidden startup window, input gating, init/shutdown hooks), `pc_pad.c` (neutral input while idle), `pc_audio.c` (idle volume), `pc_os.c` (clock), `pc_platform.h` (clock API), `CMakeLists.txt` (new sources; links `shell32`, `comctl32`).
+PC layer: `pc_main.c` (flags, hidden startup window, input gating, init/shutdown hooks), `pc_pause_menu.c` (*Quit Game* becomes *Return to Desktop* in wallpaper mode), `pc_pad.c` (neutral input while idle), `pc_audio.c` (idle volume), `pc_os.c` (clock), `pc_platform.h` (clock API), `CMakeLists.txt` (new sources; links `shell32`, `comctl32`).
 
 ## Changes outside wallpaper mode
 

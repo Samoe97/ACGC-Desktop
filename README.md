@@ -47,7 +47,7 @@ To start it with Windows, put a shortcut to `AnimalCrossing.exe --wallpaper` in 
 | Input | None (the desktop keeps working) | Keyboard and controller, as in the PC port |
 | Audio | Muted (see `--wallpaper-volume`) | Normal |
 
-From the wallpaper, **Play** opens the regular title screen; choose *Start Game* to load your save as usual. Double-clicking the tray icon also switches modes. *Quit* in the tray menu closes the game.
+From the wallpaper, **Play** opens the regular title screen; choose *Start Game* to load your save as usual. In wallpaper mode, the title screen's and pause menu's *Quit Game* become **Return to Desktop**: they send the game back to the wallpaper instead of closing it. Double-clicking the tray icon also switches modes. To close the program, use *Quit* in the tray menu.
 
 > [!IMPORTANT]
 > **Save in the game before you press <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>W</kbd>.** Returning to the wallpaper doesn't save for you yet. If you quit without saving, Mr. Resetti will have something to say next time.
@@ -70,6 +70,7 @@ The ⚙ button opens the settings dialog:
 
 - **Town clock:** use this PC's date and time, or a custom date and time. A custom clock keeps ticking from the time you set. Changing the clock reloads the idle scene, so the season and lighting update.
 - **Clock size:** the size of the widget: Small (80%), Normal (100%), Large (120%) or Extra large (150%).
+- **Camera speed:** how fast the camera wanders: Very slow, Slow (default), Normal or Fast.
 
 The settings are saved in `wallpaper.ini` next to the executable:
 
@@ -78,6 +79,8 @@ The settings are saved in `wallpaper.ini` next to the executable:
 clock_offset_seconds = 0
 # Size of the clock/controls widget (1.0 = normal)
 widget_scale = 1.20
+# Camera/walker pace while idle (1.0 = original pace; Slow = 0.6)
+camera_speed = 0.60
 ```
 
 ### Command-line options

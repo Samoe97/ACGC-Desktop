@@ -40,7 +40,8 @@
 #define IDLE_CAM_FOLLOW_SEC 2.5f     /* center lag behind the walker */
 
 /* autopilot */
-#define IDLE_WALK_STICK     34.0f    /* stick magnitude: an unhurried walk */
+#define IDLE_WALK_STICK     34.0f    /* stick magnitude at speed 1.0: an unhurried walk */
+#define IDLE_WALK_STICK_MIN 14.0f    /* just above the stick dead zone (STICK_MIN 9.9) */
 #define IDLE_WADE_STICK     61.0f    /* full tilt (STICK_MAX), needed to trigger an acre crossing */
 #define IDLE_BORDER_APPROACH 60.0f   /* square up this close to a block border */
 #define IDLE_ARRIVE_DIST    60.0f
@@ -85,6 +86,20 @@ typedef struct {
 } pc_idle_state;
 
 static pc_idle_state s_idle = { .user_zoom_target = 1.0f, .user_zoom = 1.0f };
+
+/* The "Camera speed" setting. The camera follows the walker, so this scales
+ * the walk, the pauses, the camera's follow lag and its slow drift together. */
+static f32 s_speed = 0.6f;
+
+void pc_idle_set_speed(f32 speed) {
+    if (speed < 0.2f) speed = 0.2f;
+    if (speed > 2.0f) speed = 2.0f;
+    s_speed = speed;
+}
+
+f32 pc_idle_get_speed(void) {
+    return s_speed;
+}
 
 int pc_idle_active(void) {
     return g_pc_wallpaper_active && mEv_IsTitleDemo();
@@ -226,7 +241,7 @@ void pc_idle_title_demo_move(GAME_PLAY* play) {
     if (dist < arrive) {
         /* linger: longer when watching a villager */
         s_idle.have_target = FALSE;
-        s_idle.wait_sec = (s_idle.target_npc != NULL ? 5.0f : 1.5f) + RANDOM_F(s_idle.target_npc != NULL ? 6.0f : 3.0f);
+        s_idle.wait_sec = ((s_idle.target_npc != NULL ? 5.0f : 1.5f) + RANDOM_F(s_idle.target_npc != NULL ? 6.0f : 3.0f)) / s_speed;
         mPlib_SetData1_controller_data_for_title_demo(0, 0, 0.0f, 0.0f);
         return;
     }
@@ -237,14 +252,16 @@ void pc_idle_title_demo_move(GAME_PLAY* play) {
         s_idle.stuck_sec = 0.0f;
     } else {
         s_idle.stuck_sec += dt;
-        if (s_idle.stuck_sec > IDLE_STUCK_SEC) {
+        if (s_idle.stuck_sec > IDLE_STUCK_SEC / s_speed) {
             s_idle.have_target = FALSE;
             s_idle.wait_sec = 1.0f + RANDOM_F(2.0f);
         }
     }
 
     yaw = atans_table(dz, dx);
-    stick = IDLE_WALK_STICK;
+    stick = IDLE_WALK_STICK * s_speed;
+    if (stick < IDLE_WALK_STICK_MIN) stick = IDLE_WALK_STICK_MIN;
+    if (stick > IDLE_WADE_STICK) stick = IDLE_WADE_STICK;
 
     /* Crossing into the next acre is a scripted "wade" that only starts when
      * the stick is pushed hard and nearly straight at the border
@@ -353,7 +370,7 @@ int pc_idle_camera(GAME_PLAY* play, xyz_t* center, xyz_t* eye, f32* fov_y, f32* 
 
     dt = play->game.graph->dt;
     if (dt > 0.1f) dt = 0.1f;
-    s_idle.time_sec += dt;
+    s_idle.time_sec += dt * s_speed; /* drives the slow sway/zoom drift */
 
     if (!s_idle.cam_init) {
         /* new scene or just went idle: start on the walker */
@@ -362,7 +379,7 @@ int pc_idle_camera(GAME_PLAY* play, xyz_t* center, xyz_t* eye, f32* fov_y, f32* 
         s_idle.user_zoom = s_idle.user_zoom_target;
         s_idle.cam_init = TRUE;
     } else {
-        follow = 1.0f - expf(-dt / IDLE_CAM_FOLLOW_SEC);
+        follow = 1.0f - expf(-dt * s_speed / IDLE_CAM_FOLLOW_SEC);
         s_idle.cam_center.x += (player->actor_class.world.position.x - s_idle.cam_center.x) * follow;
         s_idle.cam_center.y += (player->actor_class.world.position.y - s_idle.cam_center.y) * follow;
         s_idle.cam_center.z += (player->actor_class.world.position.z - s_idle.cam_center.z) * follow;

@@ -3,6 +3,7 @@
 #include "pc_settings_menu.h"
 #include "pc_menu_util.h"
 #include "pc_text_draw.h"
+#include "pc_wallpaper.h"
 
 #include "m_font.h"
 #include "m_rcp.h"
@@ -68,6 +69,14 @@ static void main_activate(void) {
 
 static void confirm_activate(void) {
     if (confirm_sel == 1) {
+        if (g_pc_wallpaper_enabled) {
+            /* wallpaper mode: unpause and go back to the desktop; the game keeps
+             * running behind the icons and Play picks up where you left off */
+            printf("[PAUSE] Return to desktop confirmed\n");
+            pc_pause_menu_toggle();
+            pc_wallpaper_request_wallpaper();
+            return;
+        }
         printf("[PAUSE] Quit confirmed\n");
         g_pc_running = 0;
     } else {
@@ -208,7 +217,8 @@ int pc_pause_menu_handle_event(const SDL_Event* e) {
 /* Drawing */
 
 static void draw_main_page(struct game_s* game) {
-    static const char* items[MAIN_ITEM_COUNT] = { "Resume", "Settings", "Quit Game" };
+    const char* items[MAIN_ITEM_COUNT] = { "Resume", "Settings",
+                                           g_pc_wallpaper_enabled ? "Return to Desktop" : "Quit Game" };
 
     pc_menu_draw_centered(game, "- Paused -", 80.0f, 255, 255, 255, 255, 1.0f);
 
@@ -224,9 +234,15 @@ static void draw_main_page(struct game_s* game) {
 }
 
 static void draw_confirm_page(struct game_s* game) {
-    pc_menu_draw_centered(game, "- Quit Game -", 80.0f, 255, 255, 255, 255, 1.0f);
-    pc_menu_draw_centered(game, "Are you sure you want to quit?",
-                          115.0f, 230, 230, 230, 255, 1.0f);
+    if (g_pc_wallpaper_enabled) {
+        pc_menu_draw_centered(game, "- Return to Desktop -", 80.0f, 255, 255, 255, 255, 1.0f);
+        pc_menu_draw_centered(game, "Go back to the desktop wallpaper?",
+                              115.0f, 230, 230, 230, 255, 1.0f);
+    } else {
+        pc_menu_draw_centered(game, "- Quit Game -", 80.0f, 255, 255, 255, 255, 1.0f);
+        pc_menu_draw_centered(game, "Are you sure you want to quit?",
+                              115.0f, 230, 230, 230, 255, 1.0f);
+    }
     pc_menu_draw_two_choice(game, "No", "Yes", confirm_sel, 150.0f);
 }
 

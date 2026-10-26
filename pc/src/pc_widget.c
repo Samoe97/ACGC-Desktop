@@ -98,6 +98,11 @@ static const f32 s_scale_choices[] = { 0.8f, 1.0f, 1.2f, 1.5f };
 static const WCHAR* s_scale_names[] = { L"Small", L"Normal", L"Large", L"Extra large" };
 #define WG_SCALE_CHOICES 4
 
+/* "Camera speed" choices (pc_idle_set_speed); 1.0 was the original pace */
+static const f32 s_speed_choices[] = { 0.35f, 0.6f, 1.0f, 1.5f };
+static const WCHAR* s_speed_names[] = { L"Very slow", L"Slow", L"Normal", L"Fast" };
+#define WG_SPEED_CHOICES 4
+
 static void wg_open_settings(void);
 
 /* ---- settings file ---- */
@@ -118,11 +123,13 @@ void pc_widget_load_settings(void) {
     if (f == NULL) return;
     while (fgets(line, sizeof(line), f)) {
         long long v;
-        float scale;
+        float scale, speed;
         if (sscanf(line, " clock_offset_seconds = %lld", &v) == 1) {
             pc_os_set_clock_offset((s64)v);
         } else if (sscanf(line, " widget_scale = %f", &scale) == 1 && scale >= 0.5f && scale <= 2.0f) {
             s_scale = scale;
+        } else if (sscanf(line, " camera_speed = %f", &speed) == 1) {
+            pc_idle_set_speed(speed);
         }
     }
     fclose(f);
@@ -140,6 +147,8 @@ static void wg_save_settings(void) {
     fprintf(f, "clock_offset_seconds = %lld\n", (long long)pc_os_get_clock_offset());
     fprintf(f, "# Size of the clock/controls widget (1.0 = normal)\n");
     fprintf(f, "widget_scale = %.2f\n", s_scale);
+    fprintf(f, "# Camera/walker pace while idle (1.0 = original pace; Slow = 0.6)\n");
+    fprintf(f, "camera_speed = %.2f\n", pc_idle_get_speed());
     fclose(f);
 }
 
@@ -693,7 +702,7 @@ void pc_widget_destroy(void) {
 
 /* ---- settings dialog ---- */
 
-enum { IDC_PC_CLOCK = 101, IDC_CUSTOM_CLOCK, IDC_DATE, IDC_TIME, IDC_CLOCK_SIZE, IDC_OK, IDC_CANCEL };
+enum { IDC_PC_CLOCK = 101, IDC_CUSTOM_CLOCK, IDC_DATE, IDC_TIME, IDC_CLOCK_SIZE, IDC_CAMERA_SPEED, IDC_OK, IDC_CANCEL };
 
 static HFONT s_dlg_font = NULL;
 
@@ -725,14 +734,18 @@ static void wg_settings_apply(HWND dlg) {
         if (when != (time_t)-1) offset = (s64)difftime(when, time(NULL));
     }
 
-    pc_os_set_clock_offset(offset);
     {
         int sel = (int)SendMessageW(GetDlgItem(dlg, IDC_CLOCK_SIZE), CB_GETCURSEL, 0, 0);
         if (sel >= 0 && sel < WG_SCALE_CHOICES && s_scale_choices[sel] != s_scale) wg_set_scale(s_scale_choices[sel]);
+        sel = (int)SendMessageW(GetDlgItem(dlg, IDC_CAMERA_SPEED), CB_GETCURSEL, 0, 0);
+        if (sel >= 0 && sel < WG_SPEED_CHOICES) pc_idle_set_speed(s_speed_choices[sel]);
+    }
+    if (offset != pc_os_get_clock_offset()) {
+        pc_os_set_clock_offset(offset);
+        /* season, trees and lighting are set up when the scene loads */
+        pc_idle_request_reload();
     }
     wg_save_settings();
-    /* season, trees and lighting are set up when the scene loads */
-    pc_idle_request_reload();
 }
 
 static LRESULT CALLBACK wg_settings_proc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam) {
@@ -814,7 +827,7 @@ static void wg_open_settings(void) {
     ReleaseDC(NULL, screen);
 
     {
-        RECT rc = { 0, 0, MulDiv(340, dpi, 96), MulDiv(244, dpi, 96) };
+        RECT rc = { 0, 0, MulDiv(340, dpi, 96), MulDiv(278, dpi, 96) };
         AdjustWindowRectEx(&rc, WS_CAPTION | WS_SYSMENU, FALSE, WS_EX_DLGMODALFRAME);
         w = rc.right - rc.left;
         h = rc.bottom - rc.top;
@@ -851,8 +864,20 @@ static void wg_open_settings(void) {
         }
         SendMessageW(combo, CB_SETCURSEL, sel, 0);
     }
-    wg_ctl(s_settings, L"BUTTON", L"OK", BS_DEFPUSHBUTTON | WS_TABSTOP, IDC_OK, 154, 200, 80, 28, dpi);
-    wg_ctl(s_settings, L"BUTTON", L"Cancel", WS_TABSTOP, IDC_CANCEL, 242, 200, 80, 28, dpi);
+    wg_ctl(s_settings, L"STATIC", L"Camera speed", 0, 0, 16, 188, 120, 18, dpi);
+    {
+        HWND combo = wg_ctl(s_settings, L"COMBOBOX", L"", CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP,
+                            IDC_CAMERA_SPEED, 110, 184, 150, 160, dpi);
+        f32 speed = pc_idle_get_speed();
+        int i, sel = 1;
+        for (i = 0; i < WG_SPEED_CHOICES; i++) {
+            SendMessageW(combo, CB_ADDSTRING, 0, (LPARAM)s_speed_names[i]);
+            if (fabsf(s_speed_choices[i] - speed) < 0.01f) sel = i;
+        }
+        SendMessageW(combo, CB_SETCURSEL, sel, 0);
+    }
+    wg_ctl(s_settings, L"BUTTON", L"OK", BS_DEFPUSHBUTTON | WS_TABSTOP, IDC_OK, 154, 234, 80, 28, dpi);
+    wg_ctl(s_settings, L"BUTTON", L"Cancel", WS_TABSTOP, IDC_CANCEL, 242, 234, 80, 28, dpi);
 
     /* pickers start at the town's current time */
     {
