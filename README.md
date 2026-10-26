@@ -22,7 +22,8 @@ This is a fork of [ACGC-PC-Port](https://github.com/flyngmt/ACGC-PC-Port) by Fly
   - **Custom clock:** set any date and time in the settings. A custom clock keeps running from the time you set.
 - **Desktop clock widget**, drawn in the style of the in-game clock:
   - **Clock:** date, weekday, time and am/pm, with a **Play** button beside the time.
-  - **Drawer:** a thin bar under the time opens to show the camera controls (rotate, zoom, reset) and settings. Fully zoomed in matches the normal gameplay camera.
+  - **Drawer:** a thin bar under the time opens to show the camera controls (rotate, zoom, reset), a music on/off button and settings. Fully zoomed in matches the normal gameplay camera.
+  - **Hide the clock** to keep only Play, a settings button and the drawer.
 - **Weather that fills the screen.** Rain, snow, cherry blossoms and falling leaves cover the whole view and stay put in the world, rather than following the camera.
 - **Tray icon** with Play, Return to wallpaper and Quit.
 
@@ -62,7 +63,10 @@ The thin brown bar under the time is a drawer. Hover over it and it thickens; cl
 | ↺ ↻ | Rotate the camera (up to ±35°). Hold to keep turning. |
 | − + | Zoom out / in. Fully zoomed in matches the regular gameplay camera. Hold to keep zooming. |
 | ⌂ | Reset the camera. |
+| 🔈 | Music on/off while the wallpaper is idle (off by default). Remembered between runs. |
 | ⚙ | Settings. |
+
+With **Hide the clock** turned on in the settings, the widget shrinks to **▶ Play** and a ⚙ settings badge. The drawer under them holds the camera and music buttons in two rows.
 
 ### Settings
 
@@ -70,6 +74,7 @@ The ⚙ button opens the settings dialog:
 
 - **Town clock:** use this PC's date and time, or a custom date and time. A custom clock keeps ticking from the time you set. Changing the clock reloads the idle scene, so the season and lighting update.
 - **Clock size:** the size of the widget: Small (80%), Normal (100%), Large (120%) or Extra large (150%).
+- **Hide the clock:** show only Play, settings and the drawer.
 - **Clock position:** any corner, the middle of any edge, or **Free place**. Choosing Free place (or **Move...** next to it) lifts the widget above your windows with a dashed outline. Drag it wherever you like, then click **Accept** to keep it there, or **Cancel** to put it back. Along the top edge, the drawer opens downward instead of pushing the clock up.
 - **Camera speed:** how fast the camera wanders: Very slow, Slow (default), Normal or Fast.
 
@@ -85,8 +90,14 @@ widget_scale = 1.20
 widget_position = bottom-right
 widget_free_x = 0
 widget_free_y = 0
+# 1 = hide the date and time
+hide_clock = 0
 # Camera/walker pace while idle (1.0 = original pace; Slow = 0.6)
 camera_speed = 0.60
+# The widget's music button toggles music_muted; music_volume is the idle level
+# when it's on, as a percentage of the game's master volume
+music_muted = 1
+music_volume = 50
 ```
 
 ### Command-line options
@@ -94,7 +105,7 @@ camera_speed = 0.60
 | Flag | Description |
 |---|---|
 | `--wallpaper` | Run as the desktop wallpaper |
-| `--wallpaper-volume N` | Volume while idle, as 0–100% of the master volume (default 0, muted) |
+| `--wallpaper-volume N` | Starting volume while idle, as 0–100% of the master volume (default 0, muted). Once the music button has been used, `wallpaper.ini` wins. |
 | `--rain [light\|normal\|heavy]` | Force rain (handy for previewing the weather) |
 | `--time H[:M[:S]]`, `--date M/D[/Y]` | Start the clock at this time/date (it keeps ticking) |
 | `--verbose` | Diagnostic logging |

@@ -29,8 +29,8 @@
 
 /* layout, in 96-DPI units. The window is sized for the open drawer and its
  * bottom edge is the anchor, so opening the drawer pushes the clock up; the
- * unused space above is transparent (clicks go through to the desktop). */
-#define WG_W      266
+ * unused space above is transparent (clicks go through to the desktop).
+ * With the clock hidden the window is narrower (see wg_frame). */
 #define WG_H      130
 #define WG_MARGIN 16    /* from the work area's bottom-right corner */
 
@@ -57,30 +57,48 @@ enum {
     WG_BTN_ZOOM_OUT,
     WG_BTN_ZOOM_IN,
     WG_BTN_RESET,
-    WG_BTN_SETTINGS,
-    WG_DRAWER_BTNS,
-    WG_BTN_PLAY = WG_DRAWER_BTNS,
+    WG_BTN_SOUND,
+    WG_BTN_SETTINGS, /* in the drawer, or beside Play when the clock is hidden */
+    WG_BTN_PLAY,
     WG_BTN_DRAWER, /* the drawer itself: click to open/close */
     WG_BTN_ACCEPT, /* free placement */
     WG_BTN_CANCEL,
     WG_BTN_NUM
 };
 
-/* time row: the Play pill, as tall as the time coins, then hh:mm am/pm */
-#define WG_PLAY_CX 34.0f
-#define WG_PLAY_HW 30.0f
-#define WG_TIME_R  15.0f
+/* Two arrangements. With the clock: Play left of the time, and the drawer
+ * under the time with its buttons in one row. Without: just Play and a
+ * settings badge, with a narrow drawer under them holding two rows. */
+typedef struct {
+    f32 w;                    /* window width */
+    f32 play_cx, gear_cx;     /* gear_cx < 0: no settings badge in the top row */
+    f32 drawer_x0, drawer_x1;
+    f32 open_h;               /* drawer height when open */
+    f32 top_drawer_top;       /* drawer top when anchored to the top edge */
+    int cols;                 /* drawer buttons per row */
+    f32 btn_x0;               /* first drawer button's center */
+    int nbtn;
+    int btns[7];
+} wg_frame_def;
 
-/* the drawer spans the time digits and am/pm; its height animates from a
- * thin bar (closed), to a thicker one (hovered), to the open panel */
-#define WG_DRAWER_X0    76.0f
-#define WG_DRAWER_X1    256.0f
+static const wg_frame_def s_frame_clock = {
+    266, 34, -1, 74, 258, 38, 87, 7, 91, 7,
+    { WG_BTN_ROT_L, WG_BTN_ROT_R, WG_BTN_ZOOM_OUT, WG_BTN_ZOOM_IN, WG_BTN_RESET, WG_BTN_SOUND, WG_BTN_SETTINGS },
+};
+static const wg_frame_def s_frame_compact = {
+    106, 37, 87, 3, 103, 62, 41, 3, 28, 6,
+    { WG_BTN_ROT_L, WG_BTN_ROT_R, WG_BTN_RESET, WG_BTN_ZOOM_OUT, WG_BTN_ZOOM_IN, WG_BTN_SOUND },
+};
+
+#define WG_PLAY_HW 30.0f
+#define WG_TIME_R  15.0f   /* time coins; Play and the settings badge match */
+
+/* the drawer's height animates from a thin bar (closed), to a thicker one
+ * (hovered), to the open panel */
 #define WG_DRAWER_THIN  5.0f
 #define WG_DRAWER_HOVER 12.0f
-#define WG_DRAWER_OPEN  38.0f
-#define WG_BTN_X0   96.0f   /* first drawer button's center */
-#define WG_BTN_STEP 28.0f
-#define WG_BTN_R    12.0f
+#define WG_BTN_STEP 25.0f
+#define WG_BTN_R    11.0f
 
 /* colors from m_banti's prim/env colors */
 #define RGBc(r, g, b) ((u32)(((r) << 16) | ((g) << 8) | (b)))
@@ -123,6 +141,17 @@ static DWORD s_anim_last = 0;
 static f32  s_paint_alpha = 1.0f; /* multiplies everything drawn (fading the drawer's buttons) */
 static HWND s_tip = NULL;
 static int  s_tip_for = WG_BTN_NONE;
+static int  s_hide_clock = FALSE; /* only Play and settings, no date/time */
+static int  s_muted = TRUE;       /* the sound button: idle audio off */
+static int  s_music_volume = 50;  /* idle volume when not muted, % of master */
+
+static const wg_frame_def* wg_frame(void) {
+    return s_hide_clock ? &s_frame_compact : &s_frame_clock;
+}
+
+static void wg_apply_volume(void) {
+    g_pc_wallpaper_volume = s_muted ? 0 : s_music_volume;
+}
 
 /* "Clock position": a corner, the middle of an edge, or free (dragged into
  * place; stored as the window's offset from the work area's top-left) */
@@ -180,6 +209,10 @@ void pc_widget_load_settings(void) {
     char line[256];
     FILE* f;
 
+    /* --wallpaper-volume sets the starting sound; the ini overrides it */
+    s_muted = g_pc_wallpaper_volume == 0;
+    if (g_pc_wallpaper_volume > 0) s_music_volume = g_pc_wallpaper_volume;
+
     wg_ini_path(path, sizeof(path));
     f = fopen(path, "r");
     if (f == NULL) return;
@@ -188,7 +221,13 @@ void pc_widget_load_settings(void) {
         float scale, speed;
         char word[32];
         int i, n;
-        if (sscanf(line, " widget_position = %31s", word) == 1) {
+        if (sscanf(line, " music_muted = %d", &n) == 1) {
+            s_muted = n != 0;
+        } else if (sscanf(line, " music_volume = %d", &n) == 1 && n >= 1 && n <= 100) {
+            s_music_volume = n;
+        } else if (sscanf(line, " hide_clock = %d", &n) == 1) {
+            s_hide_clock = n != 0;
+        } else if (sscanf(line, " widget_position = %31s", word) == 1) {
             for (i = 0; i < WG_POS_CHOICES; i++) {
                 if (strcmp(word, s_pos_keys[i]) == 0) s_pos = i;
             }
@@ -205,6 +244,7 @@ void pc_widget_load_settings(void) {
         }
     }
     fclose(f);
+    wg_apply_volume();
 }
 
 static void wg_save_settings(void) {
@@ -225,8 +265,14 @@ static void wg_save_settings(void) {
     fprintf(f, "widget_position = %s\n", s_pos_keys[s_pos]);
     fprintf(f, "widget_free_x = %d\n", s_free_x);
     fprintf(f, "widget_free_y = %d\n", s_free_y);
+    fprintf(f, "# 1 = hide the date and time, leaving Play, settings and the drawer\n");
+    fprintf(f, "hide_clock = %d\n", s_hide_clock);
     fprintf(f, "# Camera/walker pace while idle (1.0 = original pace; Slow = 0.6)\n");
     fprintf(f, "camera_speed = %.2f\n", pc_idle_get_speed());
+    fprintf(f, "# Music and sound while idle: the widget's sound button toggles music_muted;\n");
+    fprintf(f, "# music_volume is the level when on, as %% of the game's master volume\n");
+    fprintf(f, "music_muted = %d\n", s_muted);
+    fprintf(f, "music_volume = %d\n", s_music_volume);
     fclose(f);
 }
 
@@ -368,7 +414,18 @@ static void cv_text(wg_canvas* cv, const WCHAR* s, HFONT font, f32 cx, f32 cy, u
 
 /* ---- icons (32x32 design box, center origin, y down) ---- */
 
-enum { ICON_ROT_L, ICON_ROT_R, ICON_MINUS, ICON_PLUS, ICON_HOME, ICON_GEAR, ICON_PLAY, ICON_CHEVRON };
+enum {
+    ICON_ROT_L,
+    ICON_ROT_R,
+    ICON_MINUS,
+    ICON_PLUS,
+    ICON_HOME,
+    ICON_GEAR,
+    ICON_PLAY,
+    ICON_CHEVRON,
+    ICON_SOUND_ON,
+    ICON_SOUND_OFF
+};
 
 static f32 seg_dist(f32 px, f32 py, f32 ax, f32 ay, f32 bx, f32 by) {
     f32 dx = bx - ax, dy = by - ay;
@@ -421,6 +478,21 @@ static int icon_inside(f32 x, f32 y, int icon) {
         }
         case ICON_PLAY:
             return in_triangle(x, y, -5.5f, -9.0f, -5.5f, 9.0f, 9.5f, 0.0f);
+        case ICON_SOUND_ON:
+        case ICON_SOUND_OFF: {
+            /* speaker, then sound waves or a cross */
+            int body = x >= -12.0f && x <= -6.0f && fabsf(y) <= 3.8f;
+            int cone = in_triangle(x, y, -6.0f, -3.8f, 0.0f, -9.5f, 0.0f, 9.5f) ||
+                       in_triangle(x, y, -6.0f, -3.8f, 0.0f, 9.5f, -6.0f, 3.8f);
+            if (body || cone) return TRUE;
+            if (icon == ICON_SOUND_OFF) {
+                return seg_dist(x, y, 4.5f, -5.0f, 12.5f, 5.0f) < stroke || seg_dist(x, y, 4.5f, 5.0f, 12.5f, -5.0f) < stroke;
+            } else {
+                f32 wr = sqrtf((x - 1.0f) * (x - 1.0f) + y * y);
+                int in_fan = x > 2.0f && fabsf(atan2f(y, x - 1.0f)) < 0.85f;
+                return in_fan && (fabsf(wr - 5.5f) < 1.5f || fabsf(wr - 10.5f) < 1.5f);
+            }
+        }
         case ICON_CHEVRON: /* pointing down */
             return seg_dist(x, y, -10.0f, -4.5f, 0.0f, 4.5f) < 3.0f || seg_dist(x, y, 10.0f, -4.5f, 0.0f, 4.5f) < 3.0f;
     }
@@ -461,16 +533,17 @@ typedef struct {
 } wg_layout;
 
 static void wg_get_layout(wg_layout* l) {
+    const wg_frame_def* fr = wg_frame();
     f32 o = s_open_t * s_open_t * (3.0f - 2.0f * s_open_t);
     f32 d = WG_DRAWER_THIN + (WG_DRAWER_HOVER - WG_DRAWER_THIN) * s_hover_t;
 
-    d += (WG_DRAWER_OPEN - d) * o;
+    d += (fr->open_h - d) * o;
     l->open = o;
     l->hover = s_hover_t;
     l->drawer_h = d;
     if (s_pos_row[s_pos] == 0 && !s_placing) {
         /* along the top edge the clock stays put and the drawer opens downward */
-        l->drawer_top = WG_H - 5.0f - WG_DRAWER_OPEN;
+        l->drawer_top = fr->top_drawer_top;
     } else {
         /* the closed bar sits at the top of a strip as tall as the hovered
          * one, so hovering grows it downward and only opening moves the clock */
@@ -478,6 +551,39 @@ static void wg_get_layout(wg_layout* l) {
     }
     l->time_cy = l->drawer_top - 21.0f;
     l->date_cy = l->time_cy - 42.0f;
+}
+
+/* where a button is right now (96-DPI units); FALSE if it isn't shown */
+static int wg_btn_center(int btn, const wg_layout* l, f32* cx, f32* cy) {
+    const wg_frame_def* fr = wg_frame();
+    int i;
+
+    if (btn == WG_BTN_PLAY || (btn == WG_BTN_SETTINGS && fr->gear_cx >= 0.0f)) {
+        *cx = btn == WG_BTN_PLAY ? fr->play_cx : fr->gear_cx;
+        *cy = l->time_cy;
+        return TRUE;
+    }
+    for (i = 0; i < fr->nbtn; i++) {
+        if (fr->btns[i] == btn) {
+            int rows = (fr->nbtn + fr->cols - 1) / fr->cols;
+            *cx = fr->btn_x0 + WG_BTN_STEP * (i % fr->cols);
+            *cy = l->drawer_top + l->drawer_h * 0.5f + ((i / fr->cols) - (rows - 1) * 0.5f) * 24.0f;
+            return TRUE;
+        }
+    }
+    return FALSE;
+}
+
+static int wg_btn_icon(int btn) {
+    switch (btn) {
+        case WG_BTN_ROT_L:    return ICON_ROT_L;
+        case WG_BTN_ROT_R:    return ICON_ROT_R;
+        case WG_BTN_ZOOM_OUT: return ICON_MINUS;
+        case WG_BTN_ZOOM_IN:  return ICON_PLUS;
+        case WG_BTN_RESET:    return ICON_HOME;
+        case WG_BTN_SOUND:    return s_muted ? ICON_SOUND_OFF : ICON_SOUND_ON;
+    }
+    return ICON_GEAR;
 }
 
 static u32 wg_mix(u32 a, u32 b, f32 t) {
@@ -488,8 +594,8 @@ static u32 wg_mix(u32 a, u32 b, f32 t) {
 }
 
 static void wg_render_drawer(wg_canvas* cv, const wg_layout* l) {
-    static const int icons[WG_DRAWER_BTNS] = { ICON_ROT_L, ICON_ROT_R, ICON_MINUS, ICON_PLUS, ICON_HOME, ICON_GEAR };
-    f32 x0 = wg_s(WG_DRAWER_X0), x1 = wg_s(WG_DRAWER_X1);
+    const wg_frame_def* fr = wg_frame();
+    f32 x0 = wg_s(fr->drawer_x0), x1 = wg_s(fr->drawer_x1);
     f32 top = wg_s(l->drawer_top), hh = wg_s(l->drawer_h) * 0.5f;
     f32 cx = (x0 + x1) * 0.5f, cy = top + hh, hw = (x1 - x0) * 0.5f;
     f32 r = hh < wg_s(10) ? hh : wg_s(10);
@@ -520,12 +626,14 @@ static void wg_render_drawer(wg_canvas* cv, const wg_layout* l) {
     a = (l->open - 0.6f) / 0.4f;
     if (a <= 0.0f) return;
     s_paint_alpha = a > 1.0f ? 1.0f : a;
-    for (i = 0; i < WG_DRAWER_BTNS; i++) {
-        f32 grow = (s_down == i) ? 0.92f : (s_hot == i) ? 1.1f : 1.0f;
-        f32 bx = wg_s(WG_BTN_X0 + WG_BTN_STEP * i), br = wg_s(WG_BTN_R) * grow;
+    for (i = 0; i < fr->nbtn; i++) {
+        int b = fr->btns[i];
+        f32 grow = (s_down == b) ? 0.92f : (s_hot == b) ? 1.1f : 1.0f;
+        f32 bx, by, br = wg_s(WG_BTN_R) * grow;
 
-        cv_badge(cv, bx, cy, br, br, s_hot == i ? COL_BTN_HOT : COL_TIME_FILL, COL_BTN_RIM, FALSE);
-        cv_icon(cv, icons[i], bx, cy, br * 1.45f, COL_BTN_ICON);
+        wg_btn_center(b, l, &bx, &by);
+        cv_badge(cv, wg_s(bx), wg_s(by), br, br, s_hot == b ? COL_BTN_HOT : COL_TIME_FILL, COL_BTN_RIM, FALSE);
+        cv_icon(cv, wg_btn_icon(b), wg_s(bx), wg_s(by), br * 1.45f, COL_BTN_ICON);
     }
     s_paint_alpha = 1.0f;
 }
@@ -554,6 +662,8 @@ static void wg_render_place_backdrop(wg_canvas* cv) {
     }
 }
 
+static void wg_render_place_buttons(wg_canvas* cv);
+
 static void wg_render(wg_canvas* cv) {
     static const WCHAR* week[7] = { L"Sun", L"Mon", L"Tue", L"Wed", L"Thu", L"Fri", L"Sat" };
     int hour, min, sec, weekday, month, day, h12;
@@ -574,6 +684,28 @@ static void wg_render(wg_canvas* cv) {
 
     if (s_placing) wg_render_place_backdrop(cv);
 
+    /* Play, as tall as the time */
+    {
+        f32 grow = (s_down == WG_BTN_PLAY) ? 0.95f : (s_hot == WG_BTN_PLAY) ? 1.04f : 1.0f;
+        f32 cx = wg_s(wg_frame()->play_cx), hw = wg_s(WG_PLAY_HW) * grow, hh = tr * grow;
+
+        cv_badge(cv, cx, ty, hw, hh, s_hot == WG_BTN_PLAY ? COL_PLAY_HOT : COL_PLAY_FILL, COL_PLAY_RIM, FALSE);
+        cv_icon(cv, ICON_PLAY, cx - hw + hh, ty, hh * 1.2f, COL_WHITE);
+        cv_text(cv, L"Play", s_font_label, cx + hh * 0.55f, ty, COL_WHITE, 1.0f);
+    }
+
+    if (s_hide_clock) {
+        /* just a settings badge beside Play */
+        f32 grow = (s_down == WG_BTN_SETTINGS) ? 0.92f : (s_hot == WG_BTN_SETTINGS) ? 1.06f : 1.0f;
+        f32 cx = wg_s(wg_frame()->gear_cx), r = tr * grow;
+
+        cv_badge(cv, cx, ty, r, r, s_hot == WG_BTN_SETTINGS ? COL_BTN_HOT : COL_TIME_FILL, COL_BTN_RIM, FALSE);
+        cv_icon(cv, ICON_GEAR, cx, ty, r * 1.45f, COL_BTN_ICON);
+        wg_render_drawer(cv, &l);
+        wg_render_place_buttons(cv);
+        return;
+    }
+
     /* date: month . day  weekday */
     swprintf(buf, 8, L"%d", month);
     cv_badge(cv, wg_s(106), dy, wg_s(30), wg_s(20), COL_DATE_FILL, COL_DATE_RIM, TRUE);
@@ -585,16 +717,6 @@ static void wg_render(wg_canvas* cv) {
     cv_badge(cv, wg_s(238), dy, wg_s(21), wg_s(21), weekday == 0 ? COL_WEEK_SUN : COL_WEEK_DAY,
              COL_DATE_RIM, FALSE);
     cv_text(cv, week[weekday % 7], s_font_label, wg_s(238), dy, COL_WEEK_TEXT, 1.0f);
-
-    /* Play, as tall as the time */
-    {
-        f32 grow = (s_down == WG_BTN_PLAY) ? 0.95f : (s_hot == WG_BTN_PLAY) ? 1.04f : 1.0f;
-        f32 cx = wg_s(WG_PLAY_CX), hw = wg_s(WG_PLAY_HW) * grow, hh = tr * grow;
-
-        cv_badge(cv, cx, ty, hw, hh, s_hot == WG_BTN_PLAY ? COL_PLAY_HOT : COL_PLAY_FILL, COL_PLAY_RIM, FALSE);
-        cv_icon(cv, ICON_PLAY, cx - hw + hh, ty, hh * 1.2f, COL_WHITE);
-        cv_text(cv, L"Play", s_font_label, cx + hh * 0.55f, ty, COL_WHITE, 1.0f);
-    }
 
     /* time: hh : mm  am/pm, the colon blinking with the seconds like m_banti */
     wg_draw_digit_coin(cv, wg_s(92), ty, tr, h12 / 10 == 0 ? -1 : h12 / 10);
@@ -609,7 +731,10 @@ static void wg_render(wg_canvas* cv) {
     cv_text(cv, hour < 12 ? L"am" : L"pm", s_font_label, wg_s(238), ty - wg_s(1), COL_AMPM_TEXT, 1.0f);
 
     wg_render_drawer(cv, &l);
+    wg_render_place_buttons(cv);
+}
 
+static void wg_render_place_buttons(wg_canvas* cv) {
     if (s_placing) {
         f32 grow = (s_down == WG_BTN_ACCEPT) ? 0.95f : (s_hot == WG_BTN_ACCEPT) ? 1.05f : 1.0f;
         cv_badge(cv, wg_s(WG_PLACE_CX), wg_s(WG_ACCEPT_CY), wg_s(WG_PLACE_HW) * grow, wg_s(WG_PLACE_HH) * grow,
@@ -652,7 +777,7 @@ static void wg_target_rect(RECT* rc, int w, int h) {
 /* ---- window ---- */
 
 static void wg_place_and_paint(int force) {
-    int w = (int)wg_s(WG_W), h = (int)wg_s(WG_H);
+    int w = (int)wg_s(wg_frame()->w), h = (int)wg_s(WG_H);
     int hour, min, sec, weekday, month, day, key;
     RECT rc;
     wg_canvas cv;
@@ -716,22 +841,33 @@ static int wg_hit(int x, int y) {
         return WG_BTN_NONE;
     }
     wg_get_layout(&l);
-    if (fabsf(fx - wg_s(WG_PLAY_CX)) <= wg_s(WG_PLAY_HW) && fabsf(fy - wg_s(l.time_cy)) <= wg_s(WG_TIME_R)) {
-        return WG_BTN_PLAY;
-    }
-    if (fx >= wg_s(WG_DRAWER_X0) && fx <= wg_s(WG_DRAWER_X1)) {
-        f32 top = wg_s(l.drawer_top);
-        f32 h = wg_s(l.drawer_h > WG_DRAWER_HOVER ? l.drawer_h : WG_DRAWER_HOVER);
+    {
+        const wg_frame_def* fr = wg_frame();
+        f32 cx, cy;
 
-        if (fy < top || fy > top + h) return WG_BTN_NONE;
-        if (l.open > 0.9f) {
-            for (i = 0; i < WG_DRAWER_BTNS; i++) {
-                f32 dx = fx - wg_s(WG_BTN_X0 + WG_BTN_STEP * i);
-                f32 dy = fy - (top + wg_s(l.drawer_h) * 0.5f);
-                if (dx * dx + dy * dy <= wg_s(WG_BTN_R) * wg_s(WG_BTN_R)) return i;
-            }
+        if (fabsf(fx - wg_s(fr->play_cx)) <= wg_s(WG_PLAY_HW) && fabsf(fy - wg_s(l.time_cy)) <= wg_s(WG_TIME_R)) {
+            return WG_BTN_PLAY;
         }
-        return WG_BTN_DRAWER;
+        if (fr->gear_cx >= 0.0f && wg_btn_center(WG_BTN_SETTINGS, &l, &cx, &cy) &&
+            (fx - wg_s(cx)) * (fx - wg_s(cx)) + (fy - wg_s(cy)) * (fy - wg_s(cy)) <= wg_s(WG_TIME_R) * wg_s(WG_TIME_R)) {
+            return WG_BTN_SETTINGS;
+        }
+        if (fx >= wg_s(fr->drawer_x0) && fx <= wg_s(fr->drawer_x1)) {
+            f32 top = wg_s(l.drawer_top);
+            f32 h = wg_s(l.drawer_h > WG_DRAWER_HOVER ? l.drawer_h : WG_DRAWER_HOVER);
+
+            if (fy < top || fy > top + h) return WG_BTN_NONE;
+            if (l.open > 0.9f) {
+                for (i = 0; i < fr->nbtn; i++) {
+                    f32 dx, dy;
+                    wg_btn_center(fr->btns[i], &l, &cx, &cy);
+                    dx = fx - wg_s(cx);
+                    dy = fy - wg_s(cy);
+                    if (dx * dx + dy * dy <= wg_s(WG_BTN_R) * wg_s(WG_BTN_R)) return fr->btns[i];
+                }
+            }
+            return WG_BTN_DRAWER;
+        }
     }
     return WG_BTN_NONE;
 }
@@ -746,7 +882,9 @@ static f32 wg_approach(f32 v, f32 goal, f32 step) {
 static void wg_anim_step(void) {
     DWORD now = GetTickCount();
     f32 dt = (now - s_anim_last) / 1000.0f;
-    f32 hover_goal = (s_hot == WG_BTN_DRAWER || (s_hot >= 0 && s_hot < WG_DRAWER_BTNS)) ? 1.0f : 0.0f;
+    /* hovering the drawer or a button in it (not the settings badge beside Play) */
+    int in_drawer = s_hot >= 0 && s_hot <= WG_BTN_SETTINGS && !(s_hot == WG_BTN_SETTINGS && wg_frame()->gear_cx >= 0.0f);
+    f32 hover_goal = (s_hot == WG_BTN_DRAWER || in_drawer) ? 1.0f : 0.0f;
 
     if (dt > 0.05f) dt = 0.05f;
     s_anim_last = now;
@@ -770,9 +908,12 @@ static const WCHAR* wg_tip_text(int btn) {
         case WG_BTN_ZOOM_OUT: return L"Zoom out";
         case WG_BTN_ZOOM_IN:  return L"Zoom in";
         case WG_BTN_RESET:    return L"Reset camera";
+        case WG_BTN_SOUND:    return s_muted ? L"Turn music on" : L"Mute music";
         case WG_BTN_SETTINGS: return L"Settings";
         case WG_BTN_PLAY:     return L"Play  (Ctrl+Alt+P)";
-        case WG_BTN_DRAWER:   return s_open ? L"Hide controls" : L"Camera controls and settings";
+        case WG_BTN_DRAWER:
+            if (s_open) return L"Hide controls";
+            return s_hide_clock ? L"Camera and music controls" : L"Camera, music and settings";
         case WG_BTN_ACCEPT:   return L"Keep the clock here";
         case WG_BTN_CANCEL:   return L"Put it back where it was";
     }
@@ -813,18 +954,17 @@ static void wg_tip_show(int btn) {
 
     /* centered above the hovered thing */
     wg_get_layout(&l);
-    if (btn < WG_DRAWER_BTNS) {
-        cx = WG_BTN_X0 + WG_BTN_STEP * btn;
-        top = l.drawer_top + l.drawer_h * 0.5f - WG_BTN_R;
-    } else if (btn == WG_BTN_PLAY) {
-        cx = WG_PLAY_CX;
-        top = l.time_cy - WG_TIME_R;
-    } else if (btn == WG_BTN_ACCEPT || btn == WG_BTN_CANCEL) {
+    if (btn == WG_BTN_ACCEPT || btn == WG_BTN_CANCEL) {
         cx = WG_PLACE_CX;
         top = (btn == WG_BTN_ACCEPT ? WG_ACCEPT_CY : WG_CANCEL_CY) - WG_PLACE_HH;
-    } else {
-        cx = (WG_DRAWER_X0 + WG_DRAWER_X1) * 0.5f;
+    } else if (btn == WG_BTN_DRAWER) {
+        cx = (wg_frame()->drawer_x0 + wg_frame()->drawer_x1) * 0.5f;
         top = l.drawer_top;
+    } else {
+        f32 cy;
+        if (!wg_btn_center(btn, &l, &cx, &cy)) return;
+        top = cy - (btn == WG_BTN_PLAY || (btn == WG_BTN_SETTINGS && wg_frame()->gear_cx >= 0.0f) ? WG_TIME_R
+                                                                                                  : WG_BTN_R);
     }
     GetWindowRect(s_hwnd, &wr);
     size = (DWORD)SendMessageW(s_tip, TTM_GETBUBBLESIZE, 0, (LPARAM)&ti);
@@ -905,6 +1045,12 @@ static void wg_press(int btn) {
         case WG_BTN_ZOOM_OUT: pc_idle_user_zoom(WG_ZOOM_STEP); break;
         case WG_BTN_ZOOM_IN:  pc_idle_user_zoom(-WG_ZOOM_STEP); break;
         case WG_BTN_RESET:    pc_idle_user_reset(); break;
+        case WG_BTN_SOUND:
+            s_muted = !s_muted;
+            wg_apply_volume();
+            wg_save_settings();
+            wg_place_and_paint(TRUE);
+            break;
         case WG_BTN_SETTINGS: wg_open_settings(); break;
         case WG_BTN_PLAY:     pc_wallpaper_request_play(); break;
         case WG_BTN_DRAWER:
@@ -1165,7 +1311,8 @@ enum {
     IDC_OK,
     IDC_CANCEL,
     IDC_POSITION,
-    IDC_MOVE
+    IDC_MOVE,
+    IDC_HIDE_CLOCK
 };
 
 static HFONT s_dlg_font = NULL;
@@ -1184,6 +1331,12 @@ static int wg_settings_apply(HWND dlg) {
     int place = FALSE;
     int pos = (int)SendMessageW(GetDlgItem(dlg, IDC_POSITION), CB_GETCURSEL, 0, 0);
 
+    int hide = IsDlgButtonChecked(dlg, IDC_HIDE_CLOCK) == BST_CHECKED;
+
+    if (hide != s_hide_clock) {
+        s_hide_clock = hide;
+        wg_place_and_paint(TRUE);
+    }
     if (pos == WG_POS_FREE) {
         place = s_pos != WG_POS_FREE;
     } else if (pos >= 0 && pos < WG_POS_CHOICES && pos != s_pos) {
@@ -1312,7 +1465,7 @@ static void wg_open_settings(void) {
     ReleaseDC(NULL, screen);
 
     {
-        RECT rc = { 0, 0, MulDiv(340, dpi, 96), MulDiv(312, dpi, 96) };
+        RECT rc = { 0, 0, MulDiv(340, dpi, 96), MulDiv(346, dpi, 96) };
         AdjustWindowRectEx(&rc, WS_CAPTION | WS_SYSMENU, FALSE, WS_EX_DLGMODALFRAME);
         w = rc.right - rc.left;
         h = rc.bottom - rc.top;
@@ -1358,10 +1511,13 @@ static void wg_open_settings(void) {
         SendMessageW(combo, CB_SETCURSEL, s_pos, 0);
     }
     wg_ctl(s_settings, L"BUTTON", L"Move...", WS_TABSTOP, IDC_MOVE, 266, 183, 60, 25, dpi);
-    wg_ctl(s_settings, L"STATIC", L"Camera speed", 0, 0, 16, 222, 120, 18, dpi);
+    wg_ctl(s_settings, L"BUTTON", L"Hide the clock (show only Play and settings)", BS_AUTOCHECKBOX | WS_TABSTOP,
+           IDC_HIDE_CLOCK, 16, 218, 310, 20, dpi);
+    CheckDlgButton(s_settings, IDC_HIDE_CLOCK, s_hide_clock ? BST_CHECKED : BST_UNCHECKED);
+    wg_ctl(s_settings, L"STATIC", L"Camera speed", 0, 0, 16, 256, 120, 18, dpi);
     {
         HWND combo = wg_ctl(s_settings, L"COMBOBOX", L"", CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP,
-                            IDC_CAMERA_SPEED, 110, 218, 150, 160, dpi);
+                            IDC_CAMERA_SPEED, 110, 252, 150, 160, dpi);
         f32 speed = pc_idle_get_speed();
         int i, sel = 1;
         for (i = 0; i < WG_SPEED_CHOICES; i++) {
@@ -1370,8 +1526,8 @@ static void wg_open_settings(void) {
         }
         SendMessageW(combo, CB_SETCURSEL, sel, 0);
     }
-    wg_ctl(s_settings, L"BUTTON", L"OK", BS_DEFPUSHBUTTON | WS_TABSTOP, IDC_OK, 154, 268, 80, 28, dpi);
-    wg_ctl(s_settings, L"BUTTON", L"Cancel", WS_TABSTOP, IDC_CANCEL, 242, 268, 80, 28, dpi);
+    wg_ctl(s_settings, L"BUTTON", L"OK", BS_DEFPUSHBUTTON | WS_TABSTOP, IDC_OK, 154, 302, 80, 28, dpi);
+    wg_ctl(s_settings, L"BUTTON", L"Cancel", WS_TABSTOP, IDC_CANCEL, 242, 302, 80, 28, dpi);
 
     /* pickers start at the town's current time */
     {
