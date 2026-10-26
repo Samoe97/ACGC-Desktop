@@ -234,9 +234,9 @@ static void aFD_PrepareFieldDraw(ACTOR* actorx, GAME* game) {
     }
 
 #ifdef TARGET_PC
-    /* The wallpaper idle camera (the only user of a 9-slot field) sees past
-     * the 3x3, so add the outer ring of a 5x5. Every block's ground mesh is
-     * resident; trees/buildings out there still follow the 3x3 slots. */
+    /* The wallpaper idle camera (the only user of a 25-slot field) sees past
+     * the 3x3, so add the outer ring of a 5x5, matching the blocks it loads.
+     * Every block's ground mesh is resident. */
     {
         int dx, dz;
 

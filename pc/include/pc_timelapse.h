@@ -10,7 +10,7 @@ extern "C" {
 
 extern int    g_pc_timelapse;           /* --timelapse */
 extern double g_pc_timelapse_speed;     /* clock speed-up (default 360) */
-extern int    g_pc_timelapse_start;     /* start hour (default 0) */
+extern int    g_pc_timelapse_start;     /* start hour (default 3) */
 extern int    g_pc_timelapse_hours;     /* game hours to record (default 24) */
 extern char   g_pc_timelapse_out[512];  /* output file (default timelapse.mp4) */
 extern char   g_pc_timelapse_ffmpeg[512];

@@ -42,6 +42,10 @@ int  pc_idle_take_reload_request(void);
 /* Called when a title-demo scene starts: re-centre the camera, new targets. */
 void pc_idle_scene_start(void);
 
+/* TRUE once the walker has reached a villager in this scene (the timelapse
+ * recorder waits for it so the video opens on someone). */
+int pc_idle_met_villager(void);
+
 /* The game's clock (the town's RTC), for the desktop widget. */
 void pc_idle_get_clock(int* hour, int* min, int* sec, int* weekday, int* month, int* day);
 

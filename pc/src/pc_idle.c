@@ -51,6 +51,7 @@
 #define IDLE_STUCK_PROGRESS 40.0f
 #define IDLE_NPC_CHANCE     0.45f
 #define IDLE_NPC_MIN_DIST   250.0f   /* skip villagers we're already beside */
+#define IDLE_NPC_SKIP_NUM   4        /* remember this many unreachable villagers */
 
 /* The map ends at the outer edge of the border cliffs; past it is void the
  * gameplay camera never sees. The view's ground footprint is kept inside. */
@@ -89,6 +90,9 @@ typedef struct {
 
     f32    user_yaw_target, user_yaw;    /* degrees */
     f32    user_zoom_target, user_zoom;  /* 0 = gameplay camera, 1 = default idle view */
+
+    int    met_npc;                      /* reached a villager this scene (timelapse start) */
+    ACTOR* skip_npc[IDLE_NPC_SKIP_NUM];  /* villagers we gave up on, most recent first */
 } pc_idle_state;
 
 static pc_idle_state s_idle = { .user_zoom_target = 1.0f, .user_zoom = 1.0f };
@@ -136,7 +140,13 @@ void pc_idle_scene_start(void) {
     s_idle.have_target = FALSE;
     s_idle.target_npc = NULL;
     s_idle.wait_sec = 0.0f;
+    s_idle.met_npc = FALSE;
+    memset(s_idle.skip_npc, 0, sizeof(s_idle.skip_npc));
     s_idle.last_day = Common_Get(time.rtc_time.day);
+}
+
+int pc_idle_met_villager(void) {
+    return s_idle.met_npc;
 }
 
 /* ---- autopilot ---- */
@@ -160,7 +170,13 @@ static ACTOR* idle_pick_npc(GAME_PLAY* play, const xyz_t* from) {
     for (a = play->actor_info.list[ACTOR_PART_NPC].actor; a != NULL && count < 16; a = a->next_actor) {
         f32 dx = a->world.position.x - from->x;
         f32 dz = a->world.position.z - from->z;
-        if (dx * dx + dz * dz >= IDLE_NPC_MIN_DIST * IDLE_NPC_MIN_DIST) far_npcs[count++] = a;
+        int i, skip = FALSE;
+
+        /* not one we recently failed to reach */
+        for (i = 0; i < IDLE_NPC_SKIP_NUM; i++) {
+            if (s_idle.skip_npc[i] == a) skip = TRUE;
+        }
+        if (!skip && dx * dx + dz * dz >= IDLE_NPC_MIN_DIST * IDLE_NPC_MIN_DIST) far_npcs[count++] = a;
     }
     return count > 0 ? far_npcs[(int)RANDOM_F(count)] : NULL;
 }
@@ -202,7 +218,12 @@ static void idle_pick_spot(const xyz_t* from, f32* x, f32* z) {
 }
 
 static void idle_new_target(GAME_PLAY* play, const xyz_t* pos) {
-    s_idle.target_npc = (!g_pc_timelapse && fqrand() < IDLE_NPC_CHANCE) ? idle_pick_npc(play, pos) : NULL;
+    f32 npc_chance = IDLE_NPC_CHANCE;
+
+    /* timelapse: open beside a villager (recording waits for it), then mix
+     * villager visits into the acre tour so something is happening */
+    if (g_pc_timelapse) npc_chance = pc_timelapse_progress() < 0.0f ? 1.0f : 0.5f;
+    s_idle.target_npc = (fqrand() < npc_chance) ? idle_pick_npc(play, pos) : NULL;
     if (s_idle.target_npc == NULL) {
         idle_pick_spot(pos, &s_idle.target_x, &s_idle.target_z);
     }
@@ -239,6 +260,14 @@ void pc_idle_title_demo_move(GAME_PLAY* play) {
     if (s_idle.target_npc != NULL && !idle_npc_alive(play, s_idle.target_npc)) {
         s_idle.have_target = FALSE;
     }
+    if (g_pc_timelapse && !s_idle.met_npc) {
+        /* already beside a villager counts too (picking skips close ones) */
+        ACTOR* a;
+        for (a = play->actor_info.list[ACTOR_PART_NPC].actor; a != NULL; a = a->next_actor) {
+            f32 ndx = a->world.position.x - pos.x, ndz = a->world.position.z - pos.z;
+            if (ndx * ndx + ndz * ndz < IDLE_NPC_MIN_DIST * IDLE_NPC_MIN_DIST) s_idle.met_npc = TRUE;
+        }
+    }
     if (!s_idle.have_target) {
         idle_new_target(play, &pos);
     }
@@ -258,7 +287,11 @@ void pc_idle_title_demo_move(GAME_PLAY* play) {
         /* linger: longer when watching a villager */
         s_idle.have_target = FALSE;
         s_idle.wait_sec = ((s_idle.target_npc != NULL ? 5.0f : 1.5f) + RANDOM_F(s_idle.target_npc != NULL ? 6.0f : 3.0f)) / idle_speed();
-        if (g_pc_timelapse) s_idle.wait_sec = 1.0f + RANDOM_F(2.0f); /* keep touring */
+        if (g_pc_timelapse) {
+            /* keep touring; watch a villager a little longer */
+            s_idle.wait_sec = s_idle.target_npc != NULL ? 3.0f + RANDOM_F(3.0f) : 1.0f + RANDOM_F(2.0f);
+        }
+        if (s_idle.target_npc != NULL) s_idle.met_npc = TRUE;
         mPlib_SetData1_controller_data_for_title_demo(0, 0, 0.0f, 0.0f);
         return;
     }
@@ -270,6 +303,11 @@ void pc_idle_title_demo_move(GAME_PLAY* play) {
     } else {
         s_idle.stuck_sec += dt;
         if (s_idle.stuck_sec > IDLE_STUCK_SEC / idle_speed()) {
+            if (s_idle.target_npc != NULL) {
+                /* don't keep picking the same unreachable villager */
+                memmove(&s_idle.skip_npc[1], &s_idle.skip_npc[0], sizeof(ACTOR*) * (IDLE_NPC_SKIP_NUM - 1));
+                s_idle.skip_npc[0] = s_idle.target_npc;
+            }
             s_idle.have_target = FALSE;
             s_idle.wait_sec = 1.0f + RANDOM_F(2.0f);
         }

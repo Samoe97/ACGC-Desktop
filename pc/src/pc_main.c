@@ -288,7 +288,7 @@ int main(int argc, char* argv[]) {
             printf("  --wallpaper-volume N  Idle wallpaper volume, 0-100%% of master (default 0)\n");
             printf("  --timelapse         Record a sped-up day of the wallpaper to timelapse.mp4, then exit\n");
             printf("  --timelapse-speed X   Clock speed-up while recording (default 360)\n");
-            printf("  --timelapse-start H   Starting hour (default 0)\n");
+            printf("  --timelapse-start H   Starting hour (default 3)\n");
             printf("  --timelapse-hours N   Game hours to record (default 24)\n");
             printf("  --timelapse-out FILE  Output video (default timelapse.mp4)\n");
             printf("  --ffmpeg PATH       ffmpeg executable (default: ffmpeg on PATH)\n");

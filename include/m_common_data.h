@@ -242,7 +242,7 @@ typedef struct common_data_s {
     /* 0x028568 */ Door_data_c event_door_data;
     /* 0x02857C */ Door_data_c famicom_emu_exit_door_data;
 #ifdef TARGET_PC
-    u16 remove_cut_tree_info_bitfield; /* one bit per visible-block slot; PC can have 9 */
+    u32 remove_cut_tree_info_bitfield; /* one bit per visible-block slot; PC can have 25 */
 #else
     /* 0x028590 */ u8 remove_cut_tree_info_bitfield; /* resets the cut tree states for trees in a visible acre */
 #endif

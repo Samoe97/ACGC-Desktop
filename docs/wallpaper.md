@@ -106,16 +106,17 @@ The title demo already drives its stand-in player with fake controller data (`mP
 - **User rotation:** ±35°. Acre crossings need a roughly north-up camera.
 - **Map bounds:** `idle_view_footprint()` intersects the four corner rays of the view with the ground plane. The top corners are stretched by 1.7× to allow for the world's "rolling log" bend, which lets the camera see further than a flat plane would. If the footprint passes x = 0, x = 7 × 640 or z = 0, the whole view is slid back inside.
 
-### Loading the full 3×3 around the walker
+### Loading the full 5×5 around the walker
 
-The stock game creates trees, items and buildings only for the **4** blocks (2×2) nearest the player. That's fine for the gameplay camera, but the idle camera sees about 2½ blocks across.
+The stock game creates trees, items and buildings only for the **4** blocks (2×2) nearest the player. That's fine for the gameplay camera, but the idle camera sees about 2½ blocks across, and more at the top of the screen. A 3×3 wasn't enough: as the walker crossed an acre, the column on the far side unloaded and its trees vanished from the edge of the view.
 
-- **`mFM_VISIBLE_BLOCK_NUM` is 9 on PC** (`m_field_make.h`). Arrays sized by it grow, but only the title-demo field in wallpaper mode actually allocates 9 BG slots (`mFM_FieldInit`). Every other scene keeps its own slot count.
-- **`mFI_BGDisplayListRefresh`** loads the whole 3×3 when the field has 9 slots. `mFI_GetFreeRegisterBgInfo` never hands out a slot beyond the field's own count, because those have no display-list buffer.
-- **`mFI_GetItemTable_NoReset`:** its first pass pins the player's row. It was written for at most 2 blocks per row and gave the left and right neighbours the same table index, so with a 3×3 one of them lost its trees. With 9 slots, only the player's own block is pinned.
-- **Slot bitfields** grew from `u8` to `u16`: `remove_cut_tree_info_bitfield` in `common_data` and the matching locals.
-- **Buildings and other actors:** `ac_birth_control` spawns all 8 neighbours when the field has 9 slots, instead of the 3 on the player's quadrant side.
-- **Ground:** `ac_field_draw` draws a 5×5 instead of a 3×3 when the field has 9 slots. Every block's mesh is resident; the outer ring only draws blocks that exist.
+- **`mFM_VISIBLE_BLOCK_NUM` is 25 on PC** (`m_field_make.h`, with `mFM_IDLE_BLOCK_RADIUS` 2). Arrays sized by it grow, but only the title-demo field in wallpaper mode actually allocates 25 BG slots (`mFM_FieldInit`). Every other scene keeps its own slot count.
+- **`mFI_BGDisplayListRefresh`** loads the whole 5×5 when the field has more than 4 slots. `mFI_GetFreeRegisterBgInfo` never hands out a slot beyond the field's own count, because those have no display-list buffer.
+- **`mFI_GetItemTable_NoReset`:** its first pass pins the player's row. It was written for at most 2 blocks per row and gave the left and right neighbours the same table index, so with a wider field one of them lost its trees. With the idle field, only the player's own block is pinned.
+- **Slot bitfields** grew from `u8` to `u32`: `remove_cut_tree_info_bitfield` in `common_data` and the matching locals.
+- **Buildings and other actors:** `ac_birth_control` spawns all 24 neighbours with the idle field, instead of the 3 on the player's quadrant side.
+- **Ground:** `ac_field_draw` draws a 5×5 instead of a 3×3 with the idle field, matching the loaded blocks. Every block's mesh is resident; the outer ring only draws blocks that exist.
+- **Tree culling:** `bg_item_common_culling_check` draws every item in the loaded blocks while idle, and `Camera2_CheckCullingMode` ignores the camera's stale talk/close-up timers. Both hid trees in the wide view.
 - **Culling:** `Actor_draw_actor_no_culling_check2` allows 2500 more units of depth while idle. The idle camera is about 1.5× further away, so without this the top of the screen culled (and froze) buildings.
 - **Train:** `ac_train0` normally deletes itself as soon as the player leaves its row of acres. While idle it tolerates one row of distance.
 
@@ -180,7 +181,8 @@ An earlier attempt drew the widget inside the game, using the real `m_banti` clo
 - **Start:** recording waits about 5 s (300 frames) after the idle scene appears, so it has loaded and faded in.
 - **Fast clock:** `pc_os_start_fast_clock` then runs only the calendar clock fast, from 10 game minutes before the start hour. `lbRTC_GetHardTime` reads `pc_os_rtc_time()`. `OSGetTime`, which paces frames, stays real time, so the game still runs at normal speed and only the clock races. The 10-minute warm-up lets the lighting catch up with the clock jump before the first frame.
 - **Capture:** every game minute, `pc_timelapse_frame` (called just before the buffer swap) reads the back buffer with `glReadPixels`. It writes raw RGBA to `ffmpeg` through `_popen`, which flips the image, scales it to 1080p and encodes H.264 at 30 fps. A day is 1,440 frames, or 48 s of video. When the last frame is written, the program exits.
-- **Camera:** in `pc_idle.c` the walker tours the town at the slowest pace (`IDLE_TL_SPEED`). It always heads for a neighbouring acre, skips villager visits and stops only briefly. The camera trails it with a longer lag (`IDLE_TL_FOLLOW_SEC`), so the video drifts across different parts of the village. The midnight scene reload is skipped.
+- **Opening on a villager:** before recording, the walker heads for a villager. Recording starts once it arrives (`pc_idle_met_villager`), or after a minute if it can't find one.
+- **Camera:** in `pc_idle.c` the walker tours the town at the slowest pace (`IDLE_TL_SPEED`). Half its targets are villagers, which it watches for 3–6 s. The rest are spots in a neighbouring acre, where it stops only briefly. The camera trails it with a longer lag (`IDLE_TL_FOLLOW_SEC`), so the video drifts across different parts of the village. The midnight scene reload is skipped.
 
 ## Game-code changes, file by file
 
@@ -196,16 +198,18 @@ An earlier attempt drew the widget inside the game, using the real `m_banti` clo
 | `src/game/m_player.c` | `Player_actor_draw` skipped while idle | Hidden walker |
 | `src/game/m_player_main_door.c_inc` | Door requests refused while idle | Walker stays outdoors |
 | `src/actor/ac_animal_logo.c` | Logo and menu not drawn while idle; *Quit Game* becomes *Return to Desktop* in wallpaper mode | Clean wallpaper; don't close the program from the title menu |
-| `include/m_field_make.h` | `mFM_VISIBLE_BLOCK_NUM` 9 on PC | 3×3 loading |
-| `src/game/m_field_make.c` | Title demo gets 9 BG slots in wallpaper mode | 3×3 loading |
-| `src/game/m_field_info.c` | 3×3 slot selection; slot bound; `u16` bitfields; item-table row fix | 3×3 loading, vanishing trees |
-| `include/m_common_data.h`, `src/bg_item/bg_item_common.c_inc` | `remove_cut_tree_info_bitfield` widened to `u16` | 9 slots |
-| `src/actor/ac_birth_control.c` | Spawn all 8 neighbours with 9 slots | Buildings at the edges |
-| `include/ac_field_draw.h`, `src/actor/ac_field_draw.c` | 5×5 ground with 9 slots | No void within the town |
+| `include/m_field_make.h` | `mFM_VISIBLE_BLOCK_NUM` 25 on PC | 5×5 loading |
+| `src/game/m_field_make.c` | Title demo gets 25 BG slots in wallpaper mode | 5×5 loading |
+| `src/game/m_field_info.c` | 5×5 slot selection; slot bound; `u32` bitfields; item-table row fix | 5×5 loading, vanishing trees |
+| `include/m_common_data.h` | `remove_cut_tree_info_bitfield` widened to `u32` | 25 slots |
+| `src/actor/ac_birth_control.c` | Spawn all 24 neighbours with the idle field | Buildings at the edges |
+| `include/ac_field_draw.h`, `src/actor/ac_field_draw.c` | 5×5 ground with the idle field | No void within the town |
 | `src/game/m_actor.c` | Larger cull depth while idle | Distant actors draw and move |
 | `src/actor/ac_train0_move.c_inc` | Train tolerates one row off while idle | Train visible from further away |
 | `include/sys_dynamic.h` | Bigger per-frame display-list buffers on PC | See below |
 | `src/lb_rtc.c` | `lbRTC_GetHardTime` reads `pc_os_rtc_time()` on PC | Timelapse fast clock |
+| `src/game/m_camera2.c` | `Camera2_CheckCullingMode` returns FALSE while idle | Its talk/close-up timers go stale under the idle camera and hid clumps of trees |
+| `src/bg_item/bg_item_common.c_inc` | Items in loaded blocks always draw while idle | Trees whose base was just off-screen vanished from the wide view |
 
 PC layer: `pc_main.c` (flags, hidden startup window, input gating, init/shutdown hooks), `pc_pause_menu.c` (*Quit Game* becomes *Return to Desktop* in wallpaper mode), `pc_pad.c` (neutral input while idle), `pc_audio.c` (idle volume), `pc_os.c` (clock), `pc_platform.h` (clock API), `CMakeLists.txt` (new sources; links `shell32`, `comctl32`).
 

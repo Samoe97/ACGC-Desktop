@@ -658,6 +658,16 @@ extern int Camera2_CheckCullingMode() {
     Camera2* camera = &play->camera;
     int main_index = camera->now_main_index;
 
+#ifdef TARGET_PC
+    /* The wallpaper's idle camera skips the camera state machine, so the
+     * talk/close-up timers below are stale; trusting them hid whole clumps
+     * of trees (leaving their shadows). Nobody is talking while idle. */
+    {
+        extern int pc_idle_active(void);
+        if (pc_idle_active()) return FALSE;
+    }
+#endif
+
     if (main_index == CAMERA2_PROCESS_TALK) {
         if (camera->main_data.talk.cull_timer >= 15.0f) {
             return TRUE;

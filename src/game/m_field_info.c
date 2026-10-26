@@ -973,7 +973,7 @@ extern EVW_ANIME_DATA* mFI_GetBGTexAnimInfo(s8* anim_num, int bx, int bz) {
 }
 
 #ifdef TARGET_PC
-typedef u16 mFI_slot_bits_t; /* one bit per visible-block slot; PC can have 9 */
+typedef u32 mFI_slot_bits_t; /* one bit per visible-block slot; PC can have 25 */
 #else
 typedef u8 mFI_slot_bits_t;
 #endif
@@ -1107,13 +1107,13 @@ extern void mFI_BGDisplayListRefresh(xyz_t wpos) {
     mFI_WhereisInBlock(&where_bitfield, wpos);
 
 #ifdef TARGET_PC
-    /* A field with slots for the whole 3x3 (wallpaper idle mode) loads every
-     * neighbour instead of the 2x2 quadrant nearest the player. */
+    /* A field with slots for the whole 5x5 (wallpaper idle mode) loads every
+     * block within two of the player instead of the 2x2 quadrant nearest it. */
     if (g_fdinfo->bg_num >= 9) {
         int dx, dz;
 
-        for (dz = -1; dz <= 1; dz++) {
-            for (dx = -1; dx <= 1; dx++) {
+        for (dz = -mFM_IDLE_BLOCK_RADIUS; dz <= mFM_IDLE_BLOCK_RADIUS; dz++) {
+            for (dx = -mFM_IDLE_BLOCK_RADIUS; dx <= mFM_IDLE_BLOCK_RADIUS; dx++) {
                 if ((dx != 0 || dz != 0) && mFI_BlockCheck(bx + dx, bz + dz)) {
                     mFI_BGDispMake(&disp_bitfield, bx + dx, bz + dz);
                 }
@@ -1536,7 +1536,7 @@ extern int mFI_GetItemTable_NoReset(mFI_item_table_c* item_table, xyz_t wpos) {
 #ifdef TARGET_PC
     /* The row pass below gives the left and right neighbours the same table
      * index (it was written for a 2x2, so a row never had both). With the
-     * idle camera's 3x3 that overwrote one of them and its trees vanished, so
+     * idle camera's wider field that overwrote one of them and its trees vanished, so
      * only pin the player's own block here; the second pass adds the rest. */
     int row_checks = g_fdinfo->bg_num >= 9 ? 1 : 3;
     int row_max = g_fdinfo->bg_num >= 9 ? 1 : 2;

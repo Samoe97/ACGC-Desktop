@@ -2850,6 +2850,15 @@ static int bg_item_common_culling_check(GAME_PLAY* play, ACTOR* actorx, xyz_t* p
     f32 camera_w;
 
     Skin_Matrix_PrjMulVector(&play->projection_matrix, pos, &camera_pos, &camera_w);
+#ifdef TARGET_PC
+    /* The wallpaper's idle view is wide and high; items are culled on their
+     * base point, so trees whose base sat just off an edge vanished while
+     * their crowns should still show. Draw everything in the loaded blocks. */
+    {
+        extern int pc_idle_active(void);
+        if (pc_idle_active()) return TRUE;
+    }
+#endif
     return Actor_draw_actor_no_culling_check2(actorx, &camera_pos, camera_w);
 }
 

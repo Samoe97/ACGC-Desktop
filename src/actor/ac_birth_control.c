@@ -325,12 +325,24 @@ static const BlockOrUnit_c l_near_block_lookup_table[][3] = {
 };
 
 #ifdef TARGET_PC
-/* all 8 neighbours, for the wallpaper idle camera's 9-slot field */
-static const BlockOrUnit_c l_all_near_block_table[8] = {
-  { -1, -1 }, { -1, 0 }, { -1, 1 },
-  {  0, -1 },            {  0, 1 },
-  {  1, -1 }, {  1, 0 }, {  1, 1 },
-};
+/* every block within two of the player, for the wallpaper idle camera's
+ * 25-slot field (filled in on first use) */
+static BlockOrUnit_c l_all_near_block_table[mFM_VISIBLE_BLOCK_NUM - 1];
+static int l_all_near_block_num = 0;
+
+static void aBC_make_all_near_block_table(void) {
+  int dx, dz;
+
+  if (l_all_near_block_num != 0) return;
+  for (dx = -mFM_IDLE_BLOCK_RADIUS; dx <= mFM_IDLE_BLOCK_RADIUS; dx++) {
+    for (dz = -mFM_IDLE_BLOCK_RADIUS; dz <= mFM_IDLE_BLOCK_RADIUS; dz++) {
+      if (dx == 0 && dz == 0) continue;
+      l_all_near_block_table[l_all_near_block_num].x = dx;
+      l_all_near_block_table[l_all_near_block_num].z = dz;
+      l_all_near_block_num++;
+    }
+  }
+}
 #endif
 
 static void aBC_spawn_actors_in_nearby_blocks(BIRTH_CONTROL_ACTOR* birth_control, GAME_PLAY* play) {
@@ -339,11 +351,12 @@ static void aBC_spawn_actors_in_nearby_blocks(BIRTH_CONTROL_ACTOR* birth_control
   int i;
 
 #ifdef TARGET_PC
-  /* A field with slots for the whole 3x3 is viewed from far enough out that
+  /* A field with slots for the whole 5x5 is viewed from far enough out that
    * every neighbour is on screen, not just the ones on the player's side. */
   if (g_fdinfo->bg_num >= 9) {
+    aBC_make_all_near_block_table();
     ofs_p = l_all_near_block_table;
-    count = 8;
+    count = l_all_near_block_num;
   }
 #endif
 

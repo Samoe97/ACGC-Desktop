@@ -15,7 +15,7 @@ This is a fork of [ACGC-PC-Port](https://github.com/flyngmt/ACGC-PC-Port) by Fly
 - **Your town, never your save.** The idle scene is the game's title demo, which loads your town from the save and discards everything when you start playing. Idle mode never writes to your save file.
 - **Attract-mode camera.** An invisible walker wanders your town so terrain, trees, buildings and villagers load around it. A slow, swaying camera follows it from above.
   - **Walker behaviour:** it crosses acres, visits villagers and stays out of buildings.
-  - **Loaded area:** the full 3×3 acres around the walker load, so nothing pops in at the edges.
+  - **Loaded area:** the full 5×5 acres around the walker load, so nothing pops in at the edges.
   - **No void:** the camera never shows the area past the edge of the map.
 - **Real time.** Idle mode uses your PC's date and time and your town's real weather and season. (The stock title demo forces fixed demo days.)
   - **Kept in sync:** the clock resyncs every minute and after the PC wakes from sleep.
@@ -108,12 +108,12 @@ music_volume = 0
 | `--time H[:M[:S]]`, `--date M/D[/Y]` | Start the clock at this time/date (it keeps ticking) |
 | `--verbose` | Diagnostic logging |
 | `--timelapse` | Record a sped-up day of the wallpaper scene to `timelapse.mp4`, then exit (needs [ffmpeg](https://ffmpeg.org/)) |
-| `--timelapse-speed X`, `--timelapse-start H`, `--timelapse-hours N` | Clock speed-up while recording (default 360: 6 game minutes per second), starting hour (default 0) and length in game hours (default 24) |
+| `--timelapse-speed X`, `--timelapse-start H`, `--timelapse-hours N` | Clock speed-up while recording (default 360: 6 game minutes per second), starting hour (default 3 AM) and length in game hours (default 24) |
 | `--timelapse-out FILE`, `--ffmpeg PATH` | Output video, and the ffmpeg executable if it isn't on `PATH` |
 
 ### Timelapse videos
 
-`--timelapse` turns the idle scene into a recorder. The town's clock runs fast while the camera slowly tours the village from acre to acre. One frame per game minute goes to ffmpeg, giving a 1080p, 30 fps video where a full day takes 48 seconds. At the default speed (6 game minutes per real second), recording a day takes about 4 minutes.
+`--timelapse` turns the idle scene into a recorder. The town's clock runs fast while the camera slowly tours the village from acre to acre, visiting villagers along the way. The recording opens beside a villager at 3 AM. One frame per game minute goes to ffmpeg, giving a 1080p, 30 fps video where a full day takes 48 seconds. At the default speed (6 game minutes per real second), recording a day takes about 4 minutes.
 
 ```bash
 AnimalCrossing.exe --timelapse --ffmpeg "C:\path\to\ffmpeg.exe"

@@ -13,12 +13,13 @@
 
 int    g_pc_timelapse = 0;
 double g_pc_timelapse_speed = 360.0; /* 6 game minutes per real second */
-int    g_pc_timelapse_start = 0;
+int    g_pc_timelapse_start = 3;
 int    g_pc_timelapse_hours = 24;
 char   g_pc_timelapse_out[512] = "timelapse.mp4";
 char   g_pc_timelapse_ffmpeg[512] = "ffmpeg";
 
 #define TL_SETTLE_FRAMES 300   /* let the idle scene load and fade in first */
+#define TL_FIND_VILLAGER_FRAMES 3600
 #define TL_FPS           30
 #define TL_GAME_SECS_PER_FRAME 60.0
 #define TL_WARMUP_SECS   600.0 /* game time run before the first frame, so the
@@ -92,8 +93,10 @@ void pc_timelapse_frame(void) {
             s_settle = 0;
             return;
         }
-        s_progress = 0.0f;
+        /* open on a villager: wait (up to a minute) for the walker to reach one */
         if (++s_settle < TL_SETTLE_FRAMES) return;
+        if (!pc_idle_met_villager() && s_settle < TL_SETTLE_FRAMES + TL_FIND_VILLAGER_FRAMES) return;
+        s_progress = 0.0f;
         if (!tl_open()) {
             g_pc_timelapse = 0;
             return;
