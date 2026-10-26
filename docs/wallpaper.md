@@ -152,9 +152,13 @@ The game clock is **PC clock + offset**. The `--time`/`--date` options and the c
   - **Hovered:** it thickens and fades to the buttons' tan, with a down chevron.
   - **Open (click):** it becomes a tan panel holding rotate, zoom, reset and settings.
   - **Animation:** `s_hover_t` and `s_open_t` ease on a 15 ms timer; `wg_get_layout` turns them into positions. The window is sized for the open drawer and anchored at its bottom edge, so opening pushes the clock and calendar up. A nearly transparent pad (alpha 3/255) under the thin bar makes the hover target taller, since layered windows ignore the mouse over fully transparent pixels.
+- **Position** (`wg_target_rect`): a corner or edge middle of the primary monitor's work area, 16 px in, or a free offset from the work area's top-left. The rect is clamped on screen, which covers resolution changes. Along the top edge, `wg_get_layout` pins the clock and the drawer opens downward.
+- **Free placement** (`wg_begin_placing`): the widget turns `HWND_TOPMOST`, closes its drawer, and draws a translucent tan sheet with a dashed border, so every pixel can be grabbed. Accept and Cancel sit in the empty top-left corner.
+  - **Drag:** dragging moves the window by the cursor's delta from where the drag began.
+  - **Accept or Cancel:** Accept saves `widget_position = free` and `widget_free_x/y`. Cancel, or switching to play, restores the previous position. Either one drops the widget back to `HWND_BOTTOM`.
 - **Tooltips:** one tracking tooltip (`TTF_TRACK | TTF_ABSOLUTE`), shown 450 ms after the pointer settles on a button and placed above it by hand, kept on screen. The widget never has focus, which rules out automatic tooltips.
 - **Redraw:** a 250 ms timer redraws only when the minute, seconds parity, hover or press state changes. Animation frames always redraw. Rotate and zoom repeat while held.
-- **Settings dialog** (`wg_open_settings`): radio buttons for the PC or a custom clock, date and time pickers, clock size and camera speed. Applying it saves `wallpaper.ini` (`clock_offset_seconds`, `widget_scale`, `camera_speed`). Only a change to the clock requests a scene reload.
+- **Settings dialog** (`wg_open_settings`): radio buttons for the PC or a custom clock, date and time pickers, clock size, clock position (with **Move...** for free placement) and camera speed. Applying it saves `wallpaper.ini` (`clock_offset_seconds`, `widget_scale`, `widget_position`, `widget_free_x/y`, `camera_speed`). Only a change to the clock requests a scene reload.
 
 An earlier attempt drew the widget inside the game, using the real `m_banti` clock models. It was dropped: the emulated GX path maps 2D in widescreen differently from what the UI code assumes, and loading custom matrices partway through the font display list doesn't take reliably.
 

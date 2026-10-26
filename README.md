@@ -70,6 +70,7 @@ The ⚙ button opens the settings dialog:
 
 - **Town clock:** use this PC's date and time, or a custom date and time. A custom clock keeps ticking from the time you set. Changing the clock reloads the idle scene, so the season and lighting update.
 - **Clock size:** the size of the widget: Small (80%), Normal (100%), Large (120%) or Extra large (150%).
+- **Clock position:** any corner, the middle of any edge, or **Free place**. Choosing Free place (or **Move...** next to it) lifts the widget above your windows with a dashed outline. Drag it wherever you like, then click **Accept** to keep it there, or **Cancel** to put it back. Along the top edge, the drawer opens downward instead of pushing the clock up.
 - **Camera speed:** how fast the camera wanders: Very slow, Slow (default), Normal or Fast.
 
 The settings are saved in `wallpaper.ini` next to the executable:
@@ -79,6 +80,11 @@ The settings are saved in `wallpaper.ini` next to the executable:
 clock_offset_seconds = 0
 # Size of the clock/controls widget (1.0 = normal)
 widget_scale = 1.20
+# top-left, top-center, top-right, left-center, right-center, bottom-left, bottom-center,
+# bottom-right, or free (at widget_free_x/y pixels from the top-left of the work area)
+widget_position = bottom-right
+widget_free_x = 0
+widget_free_y = 0
 # Camera/walker pace while idle (1.0 = original pace; Slow = 0.6)
 camera_speed = 0.60
 ```

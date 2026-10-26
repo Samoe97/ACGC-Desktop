@@ -61,6 +61,8 @@ enum {
     WG_DRAWER_BTNS,
     WG_BTN_PLAY = WG_DRAWER_BTNS,
     WG_BTN_DRAWER, /* the drawer itself: click to open/close */
+    WG_BTN_ACCEPT, /* free placement */
+    WG_BTN_CANCEL,
     WG_BTN_NUM
 };
 
@@ -122,6 +124,38 @@ static f32  s_paint_alpha = 1.0f; /* multiplies everything drawn (fading the dra
 static HWND s_tip = NULL;
 static int  s_tip_for = WG_BTN_NONE;
 
+/* "Clock position": a corner, the middle of an edge, or free (dragged into
+ * place; stored as the window's offset from the work area's top-left) */
+enum {
+    WG_POS_TOP_LEFT,
+    WG_POS_TOP_CENTER,
+    WG_POS_TOP_RIGHT,
+    WG_POS_LEFT_CENTER,
+    WG_POS_RIGHT_CENTER,
+    WG_POS_BOTTOM_LEFT,
+    WG_POS_BOTTOM_CENTER,
+    WG_POS_BOTTOM_RIGHT,
+    WG_POS_FREE,
+    WG_POS_CHOICES
+};
+static const char* s_pos_keys[WG_POS_CHOICES] = { "top-left",     "top-center",    "top-right",
+                                                  "left-center",  "right-center",  "bottom-left",
+                                                  "bottom-center", "bottom-right", "free" };
+static const WCHAR* s_pos_names[WG_POS_CHOICES] = { L"Top left",     L"Top center",    L"Top right",
+                                                    L"Left center",  L"Right center",  L"Bottom left",
+                                                    L"Bottom center", L"Bottom right", L"Free place (drag it)" };
+static const int s_pos_col[WG_POS_CHOICES] = { 0, 1, 2, 0, 2, 0, 1, 2, 0 }; /* 0 left, 1 center, 2 right */
+static const int s_pos_row[WG_POS_CHOICES] = { 0, 0, 0, 1, 1, 2, 2, 2, 2 }; /* 0 top, 1 middle, 2 bottom */
+static int s_pos = WG_POS_BOTTOM_RIGHT;
+static int s_free_x = 0, s_free_y = 0;
+
+/* free placement: the widget floats above everything with Accept/Cancel
+ * until the user accepts; Cancel restores the saved position */
+static int s_placing = FALSE;
+static int s_saved_pos, s_saved_free_x, s_saved_free_y;
+static int s_dragging = FALSE;
+static POINT s_drag_cursor, s_drag_origin; /* cursor and free offset when the drag began */
+
 static const f32 s_scale_choices[] = { 0.8f, 1.0f, 1.2f, 1.5f };
 static const WCHAR* s_scale_names[] = { L"Small", L"Normal", L"Large", L"Extra large" };
 #define WG_SCALE_CHOICES 4
@@ -152,7 +186,17 @@ void pc_widget_load_settings(void) {
     while (fgets(line, sizeof(line), f)) {
         long long v;
         float scale, speed;
-        if (sscanf(line, " clock_offset_seconds = %lld", &v) == 1) {
+        char word[32];
+        int i, n;
+        if (sscanf(line, " widget_position = %31s", word) == 1) {
+            for (i = 0; i < WG_POS_CHOICES; i++) {
+                if (strcmp(word, s_pos_keys[i]) == 0) s_pos = i;
+            }
+        } else if (sscanf(line, " widget_free_x = %d", &n) == 1) {
+            s_free_x = n;
+        } else if (sscanf(line, " widget_free_y = %d", &n) == 1) {
+            s_free_y = n;
+        } else if (sscanf(line, " clock_offset_seconds = %lld", &v) == 1) {
             pc_os_set_clock_offset((s64)v);
         } else if (sscanf(line, " widget_scale = %f", &scale) == 1 && scale >= 0.5f && scale <= 2.0f) {
             s_scale = scale;
@@ -175,6 +219,12 @@ static void wg_save_settings(void) {
     fprintf(f, "clock_offset_seconds = %lld\n", (long long)pc_os_get_clock_offset());
     fprintf(f, "# Size of the clock/controls widget (1.0 = normal)\n");
     fprintf(f, "widget_scale = %.2f\n", s_scale);
+    fprintf(f, "# Where the widget sits: top-left, top-center, top-right, left-center, right-center,\n");
+    fprintf(f, "# bottom-left, bottom-center, bottom-right, or free (at widget_free_x/y pixels from the\n");
+    fprintf(f, "# top-left of the screen's work area)\n");
+    fprintf(f, "widget_position = %s\n", s_pos_keys[s_pos]);
+    fprintf(f, "widget_free_x = %d\n", s_free_x);
+    fprintf(f, "widget_free_y = %d\n", s_free_y);
     fprintf(f, "# Camera/walker pace while idle (1.0 = original pace; Slow = 0.6)\n");
     fprintf(f, "camera_speed = %.2f\n", pc_idle_get_speed());
     fclose(f);
@@ -418,9 +468,14 @@ static void wg_get_layout(wg_layout* l) {
     l->open = o;
     l->hover = s_hover_t;
     l->drawer_h = d;
-    /* the closed bar sits at the top of a strip as tall as the hovered one,
-     * so hovering grows it downward and only opening moves the clock */
-    l->drawer_top = WG_H - 5.0f - (d > WG_DRAWER_HOVER ? d : WG_DRAWER_HOVER);
+    if (s_pos_row[s_pos] == 0 && !s_placing) {
+        /* along the top edge the clock stays put and the drawer opens downward */
+        l->drawer_top = WG_H - 5.0f - WG_DRAWER_OPEN;
+    } else {
+        /* the closed bar sits at the top of a strip as tall as the hovered
+         * one, so hovering grows it downward and only opening moves the clock */
+        l->drawer_top = WG_H - 5.0f - (d > WG_DRAWER_HOVER ? d : WG_DRAWER_HOVER);
+    }
     l->time_cy = l->drawer_top - 21.0f;
     l->date_cy = l->time_cy - 42.0f;
 }
@@ -475,6 +530,30 @@ static void wg_render_drawer(wg_canvas* cv, const wg_layout* l) {
     s_paint_alpha = 1.0f;
 }
 
+/* free placement: a translucent tan sheet with a dashed brown border, so the
+ * whole window can be grabbed, and Accept/Cancel in the empty top-left */
+#define WG_PLACE_CX  36.0f
+#define WG_PLACE_HW  30.0f
+#define WG_PLACE_HH  12.0f
+#define WG_ACCEPT_CY 20.0f
+#define WG_CANCEL_CY 48.0f
+
+static void wg_render_place_backdrop(wg_canvas* cv) {
+    f32 w = (f32)cv->w, h = (f32)cv->h, t = wg_s(2.0f), dash = wg_s(8.0f), gap = wg_s(5.0f), p;
+
+    cv_rrect(cv, w * 0.5f, h * 0.5f, w * 0.5f, h * 0.5f, wg_s(10), COL_BTN_FILL, 0.55f);
+    for (p = wg_s(8); p < w - wg_s(8); p += dash + gap) {
+        f32 e = p + dash < w - wg_s(8) ? p + dash : w - wg_s(8);
+        cv_rect(cv, p, 0, e, t, COL_BTN_RIM, 0.9f);
+        cv_rect(cv, p, h - t, e, h, COL_BTN_RIM, 0.9f);
+    }
+    for (p = wg_s(8); p < h - wg_s(8); p += dash + gap) {
+        f32 e = p + dash < h - wg_s(8) ? p + dash : h - wg_s(8);
+        cv_rect(cv, 0, p, t, e, COL_BTN_RIM, 0.9f);
+        cv_rect(cv, w - t, p, w, e, COL_BTN_RIM, 0.9f);
+    }
+}
+
 static void wg_render(wg_canvas* cv) {
     static const WCHAR* week[7] = { L"Sun", L"Mon", L"Tue", L"Wed", L"Thu", L"Fri", L"Sat" };
     int hour, min, sec, weekday, month, day, h12;
@@ -492,6 +571,8 @@ static void wg_render(wg_canvas* cv) {
         hour = 12; min = 0; sec = 0; weekday = 0; month = 1; day = 1;
     }
     h12 = hour % 12 == 0 ? 12 : hour % 12;
+
+    if (s_placing) wg_render_place_backdrop(cv);
 
     /* date: month . day  weekday */
     swprintf(buf, 8, L"%d", month);
@@ -528,13 +609,49 @@ static void wg_render(wg_canvas* cv) {
     cv_text(cv, hour < 12 ? L"am" : L"pm", s_font_label, wg_s(238), ty - wg_s(1), COL_AMPM_TEXT, 1.0f);
 
     wg_render_drawer(cv, &l);
+
+    if (s_placing) {
+        f32 grow = (s_down == WG_BTN_ACCEPT) ? 0.95f : (s_hot == WG_BTN_ACCEPT) ? 1.05f : 1.0f;
+        cv_badge(cv, wg_s(WG_PLACE_CX), wg_s(WG_ACCEPT_CY), wg_s(WG_PLACE_HW) * grow, wg_s(WG_PLACE_HH) * grow,
+                 s_hot == WG_BTN_ACCEPT ? COL_PLAY_HOT : COL_PLAY_FILL, COL_PLAY_RIM, FALSE);
+        cv_text(cv, L"Accept", s_font_label, wg_s(WG_PLACE_CX), wg_s(WG_ACCEPT_CY), COL_WHITE, 1.0f);
+        grow = (s_down == WG_BTN_CANCEL) ? 0.95f : (s_hot == WG_BTN_CANCEL) ? 1.05f : 1.0f;
+        cv_badge(cv, wg_s(WG_PLACE_CX), wg_s(WG_CANCEL_CY), wg_s(WG_PLACE_HW) * grow, wg_s(WG_PLACE_HH) * grow,
+                 s_hot == WG_BTN_CANCEL ? COL_BTN_HOT : COL_TIME_FILL, COL_BTN_RIM, FALSE);
+        cv_text(cv, L"Cancel", s_font_label, wg_s(WG_PLACE_CX), wg_s(WG_CANCEL_CY), COL_BTN_ICON, 1.0f);
+    }
+}
+
+/* where the widget goes on the primary monitor's work area */
+static void wg_target_rect(RECT* rc, int w, int h) {
+    POINT zero = { 0, 0 };
+    MONITORINFO mi;
+    RECT wa;
+    int m = (int)wg_s(WG_MARGIN);
+
+    mi.cbSize = sizeof(mi);
+    GetMonitorInfoW(MonitorFromPoint(zero, MONITOR_DEFAULTTOPRIMARY), &mi);
+    wa = mi.rcWork;
+    if (s_pos == WG_POS_FREE) {
+        rc->left = wa.left + s_free_x;
+        rc->top = wa.top + s_free_y;
+    } else {
+        int col = s_pos_col[s_pos], row = s_pos_row[s_pos];
+        rc->left = col == 0 ? wa.left + m : col == 1 ? (wa.left + wa.right - w) / 2 : wa.right - m - w;
+        rc->top = row == 0 ? wa.top + m : row == 1 ? (wa.top + wa.bottom - h) / 2 : wa.bottom - m - h;
+    }
+    /* stay on screen, e.g. after a resolution change */
+    if (rc->left > wa.right - w) rc->left = wa.right - w;
+    if (rc->top > wa.bottom - h) rc->top = wa.bottom - h;
+    if (rc->left < wa.left) rc->left = wa.left;
+    if (rc->top < wa.top) rc->top = wa.top;
+    rc->right = rc->left + w;
+    rc->bottom = rc->top + h;
 }
 
 /* ---- window ---- */
 
 static void wg_place_and_paint(int force) {
-    POINT zero = { 0, 0 };
-    MONITORINFO mi;
     int w = (int)wg_s(WG_W), h = (int)wg_s(WG_H);
     int hour, min, sec, weekday, month, day, key;
     RECT rc;
@@ -548,21 +665,18 @@ static void wg_place_and_paint(int force) {
     size.cx = w;
     size.cy = h;
 
-    mi.cbSize = sizeof(mi);
-    GetMonitorInfoW(MonitorFromPoint(zero, MONITOR_DEFAULTTOPRIMARY), &mi);
-    rc.right = mi.rcWork.right - (LONG)wg_s(WG_MARGIN);
-    rc.bottom = mi.rcWork.bottom - (LONG)wg_s(WG_MARGIN);
-    rc.left = rc.right - w;
-    rc.top = rc.bottom - h;
+    wg_target_rect(&rc, w, h);
     /* HWND_BOTTOM: an owned window can't go below its owner, so this parks it
-     * directly above the desktop, under every normal window */
-    SetWindowPos(s_hwnd, HWND_BOTTOM, rc.left, rc.top, w, h,
+     * directly above the desktop, under every normal window. While it's being
+     * placed it floats above everything instead. */
+    SetWindowPos(s_hwnd, s_placing ? HWND_TOPMOST : HWND_BOTTOM, rc.left, rc.top, w, h,
                  SWP_NOACTIVATE | (s_visible ? SWP_SHOWWINDOW : SWP_HIDEWINDOW));
     if (!s_visible) return;
 
     /* redraw only when something visible changed */
     pc_idle_get_clock(&hour, &min, &sec, &weekday, &month, &day);
     key = ((((((month * 32 + day) * 24 + hour) * 60 + min) * 2 + (sec & 1)) * 16) + (s_hot + 1)) * 16 + (s_down + 1);
+    key = key * 2 + s_placing;
     if (!force && key == s_drawn_key) return;
     s_drawn_key = key;
 
@@ -593,6 +707,14 @@ static int wg_hit(int x, int y) {
     wg_layout l;
     int i;
 
+    if (s_placing) {
+        /* only Accept/Cancel; anywhere else drags */
+        if (fabsf(fx - wg_s(WG_PLACE_CX)) <= wg_s(WG_PLACE_HW)) {
+            if (fabsf(fy - wg_s(WG_ACCEPT_CY)) <= wg_s(WG_PLACE_HH)) return WG_BTN_ACCEPT;
+            if (fabsf(fy - wg_s(WG_CANCEL_CY)) <= wg_s(WG_PLACE_HH)) return WG_BTN_CANCEL;
+        }
+        return WG_BTN_NONE;
+    }
     wg_get_layout(&l);
     if (fabsf(fx - wg_s(WG_PLAY_CX)) <= wg_s(WG_PLAY_HW) && fabsf(fy - wg_s(l.time_cy)) <= wg_s(WG_TIME_R)) {
         return WG_BTN_PLAY;
@@ -651,6 +773,8 @@ static const WCHAR* wg_tip_text(int btn) {
         case WG_BTN_SETTINGS: return L"Settings";
         case WG_BTN_PLAY:     return L"Play  (Ctrl+Alt+P)";
         case WG_BTN_DRAWER:   return s_open ? L"Hide controls" : L"Camera controls and settings";
+        case WG_BTN_ACCEPT:   return L"Keep the clock here";
+        case WG_BTN_CANCEL:   return L"Put it back where it was";
     }
     return NULL;
 }
@@ -695,6 +819,9 @@ static void wg_tip_show(int btn) {
     } else if (btn == WG_BTN_PLAY) {
         cx = WG_PLAY_CX;
         top = l.time_cy - WG_TIME_R;
+    } else if (btn == WG_BTN_ACCEPT || btn == WG_BTN_CANCEL) {
+        cx = WG_PLACE_CX;
+        top = (btn == WG_BTN_ACCEPT ? WG_ACCEPT_CY : WG_CANCEL_CY) - WG_PLACE_HH;
     } else {
         cx = (WG_DRAWER_X0 + WG_DRAWER_X1) * 0.5f;
         top = l.drawer_top;
@@ -704,13 +831,15 @@ static void wg_tip_show(int btn) {
     {
         MONITORINFO mi;
         int x = wr.left + (int)wg_s(cx) - LOWORD(size) / 2;
+        int y = wr.top + (int)wg_s(top) - HIWORD(size) - (int)wg_s(4);
 
-        /* keep it on screen; the widget hugs the right edge */
+        /* keep it on screen; the widget can hug any edge */
         mi.cbSize = sizeof(mi);
         GetMonitorInfoW(MonitorFromWindow(s_hwnd, MONITOR_DEFAULTTOPRIMARY), &mi);
         if (x > mi.rcWork.right - LOWORD(size) - 4) x = mi.rcWork.right - LOWORD(size) - 4;
-        SendMessageW(s_tip, TTM_TRACKPOSITION, 0,
-                     MAKELPARAM(x, wr.top + (int)wg_s(top) - HIWORD(size) - (int)wg_s(4)));
+        if (x < mi.rcWork.left + 4) x = mi.rcWork.left + 4;
+        if (y < mi.rcWork.top + 4) y = mi.rcWork.top + 4;
+        SendMessageW(s_tip, TTM_TRACKPOSITION, 0, MAKELPARAM(x, y));
     }
     SendMessageW(s_tip, TTM_TRACKACTIVATE, TRUE, (LPARAM)&ti);
     s_tip_for = btn;
@@ -726,8 +855,51 @@ static void wg_set_hot(int hot) {
     }
 }
 
+/* ---- free placement ---- */
+
+static void wg_begin_placing(void) {
+    RECT rc, wa;
+    MONITORINFO mi;
+    POINT zero = { 0, 0 };
+
+    if (s_hwnd == NULL || s_placing) return;
+    s_saved_pos = s_pos;
+    s_saved_free_x = s_free_x;
+    s_saved_free_y = s_free_y;
+    /* start from wherever it is now */
+    mi.cbSize = sizeof(mi);
+    GetMonitorInfoW(MonitorFromPoint(zero, MONITOR_DEFAULTTOPRIMARY), &mi);
+    wa = mi.rcWork;
+    GetWindowRect(s_hwnd, &rc);
+    s_free_x = rc.left - wa.left;
+    s_free_y = rc.top - wa.top;
+    s_pos = WG_POS_FREE;
+    s_placing = TRUE;
+    /* close the drawer so the clock sits where it will normally rest */
+    s_open = FALSE;
+    s_open_t = s_hover_t = 0.0f;
+    KillTimer(s_hwnd, WG_TIMER_ANIM);
+    wg_place_and_paint(TRUE);
+}
+
+static void wg_end_placing(int accept) {
+    if (!s_placing) return;
+    s_placing = FALSE;
+    s_dragging = FALSE;
+    if (accept) {
+        wg_save_settings();
+    } else {
+        s_pos = s_saved_pos;
+        s_free_x = s_saved_free_x;
+        s_free_y = s_saved_free_y;
+    }
+    wg_place_and_paint(TRUE);
+}
+
 static void wg_press(int btn) {
     switch (btn) {
+        case WG_BTN_ACCEPT:   wg_end_placing(TRUE); break;
+        case WG_BTN_CANCEL:   wg_end_placing(FALSE); break;
         case WG_BTN_ROT_L:    pc_idle_user_rotate(WG_ROTATE_STEP); break;
         case WG_BTN_ROT_R:    pc_idle_user_rotate(-WG_ROTATE_STEP); break;
         case WG_BTN_ZOOM_OUT: pc_idle_user_zoom(WG_ZOOM_STEP); break;
@@ -766,6 +938,14 @@ static LRESULT CALLBACK wg_proc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lpara
                 TRACKMOUSEEVENT tme = { sizeof(tme), TME_LEAVE, hwnd, 0 };
                 s_tracking = TrackMouseEvent(&tme);
             }
+            if (s_dragging) {
+                POINT pt;
+                GetCursorPos(&pt);
+                s_free_x = s_drag_origin.x + pt.x - s_drag_cursor.x;
+                s_free_y = s_drag_origin.y + pt.y - s_drag_cursor.y;
+                wg_place_and_paint(FALSE);
+                return 0;
+            }
             wg_set_hot(wg_hit((short)LOWORD(lparam), (short)HIWORD(lparam)));
             return 0;
         case WM_MOUSELEAVE:
@@ -773,13 +953,31 @@ static LRESULT CALLBACK wg_proc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lpara
             wg_set_hot(WG_BTN_NONE);
             return 0;
         case WM_SETCURSOR:
-            SetCursor(LoadCursorW(NULL, (LPCWSTR)(s_hot != WG_BTN_NONE ? IDC_HAND : IDC_ARROW)));
+            SetCursor(LoadCursorW(NULL, (LPCWSTR)(s_hot != WG_BTN_NONE ? IDC_HAND
+                                                  : s_placing          ? IDC_SIZEALL
+                                                                       : IDC_ARROW)));
             return TRUE;
         case WM_LBUTTONDOWN:
         case WM_LBUTTONDBLCLK:
             wg_tip_hide();
             s_down = wg_hit((short)LOWORD(lparam), (short)HIWORD(lparam));
             s_hot = s_down;
+            if (s_placing && s_down == WG_BTN_NONE) {
+                /* the free offset is clamped on screen; drag from the clamped spot */
+                RECT rc, wa;
+                MONITORINFO mi;
+                POINT zero = { 0, 0 };
+                mi.cbSize = sizeof(mi);
+                GetMonitorInfoW(MonitorFromPoint(zero, MONITOR_DEFAULTTOPRIMARY), &mi);
+                wa = mi.rcWork;
+                GetWindowRect(hwnd, &rc);
+                s_drag_origin.x = rc.left - wa.left;
+                s_drag_origin.y = rc.top - wa.top;
+                GetCursorPos(&s_drag_cursor);
+                s_dragging = TRUE;
+                SetCapture(hwnd);
+                return 0;
+            }
             if (s_down != WG_BTN_NONE) {
                 SetCapture(hwnd);
                 if (wg_repeats(s_down)) {
@@ -793,6 +991,11 @@ static LRESULT CALLBACK wg_proc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lpara
             int btn = s_down;
             int over = wg_hit((short)LOWORD(lparam), (short)HIWORD(lparam));
 
+            if (s_dragging) {
+                s_dragging = FALSE;
+                ReleaseCapture();
+                return 0;
+            }
             s_down = WG_BTN_NONE;
             KillTimer(hwnd, WG_TIMER_REPEAT);
             ReleaseCapture();
@@ -803,6 +1006,7 @@ static LRESULT CALLBACK wg_proc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lpara
             return 0;
         }
         case WM_CAPTURECHANGED:
+            s_dragging = FALSE;
             if (s_down != WG_BTN_NONE) {
                 s_down = WG_BTN_NONE;
                 KillTimer(hwnd, WG_TIMER_REPEAT);
@@ -934,6 +1138,7 @@ void pc_widget_set_visible(int visible) {
         wg_place_and_paint(TRUE);
     } else {
         wg_tip_hide();
+        wg_end_placing(FALSE);
         ShowWindow(s_hwnd, SW_HIDE);
         s_hot = s_down = WG_BTN_NONE;
         if (s_settings != NULL) DestroyWindow(s_settings);
@@ -950,18 +1155,41 @@ void pc_widget_destroy(void) {
 
 /* ---- settings dialog ---- */
 
-enum { IDC_PC_CLOCK = 101, IDC_CUSTOM_CLOCK, IDC_DATE, IDC_TIME, IDC_CLOCK_SIZE, IDC_CAMERA_SPEED, IDC_OK, IDC_CANCEL };
+enum {
+    IDC_PC_CLOCK = 101,
+    IDC_CUSTOM_CLOCK,
+    IDC_DATE,
+    IDC_TIME,
+    IDC_CLOCK_SIZE,
+    IDC_CAMERA_SPEED,
+    IDC_OK,
+    IDC_CANCEL,
+    IDC_POSITION,
+    IDC_MOVE
+};
 
 static HFONT s_dlg_font = NULL;
 
 static void wg_settings_enable(HWND dlg) {
     int custom = IsDlgButtonChecked(dlg, IDC_CUSTOM_CLOCK) == BST_CHECKED;
+    int free = SendMessageW(GetDlgItem(dlg, IDC_POSITION), CB_GETCURSEL, 0, 0) == WG_POS_FREE;
     EnableWindow(GetDlgItem(dlg, IDC_DATE), custom);
     EnableWindow(GetDlgItem(dlg, IDC_TIME), custom);
+    EnableWindow(GetDlgItem(dlg, IDC_MOVE), free);
 }
 
-static void wg_settings_apply(HWND dlg) {
+/* returns TRUE when the widget should now be dragged into place */
+static int wg_settings_apply(HWND dlg) {
     s64 offset = 0;
+    int place = FALSE;
+    int pos = (int)SendMessageW(GetDlgItem(dlg, IDC_POSITION), CB_GETCURSEL, 0, 0);
+
+    if (pos == WG_POS_FREE) {
+        place = s_pos != WG_POS_FREE;
+    } else if (pos >= 0 && pos < WG_POS_CHOICES && pos != s_pos) {
+        s_pos = pos;
+        wg_place_and_paint(TRUE);
+    }
 
     if (IsDlgButtonChecked(dlg, IDC_CUSTOM_CLOCK) == BST_CHECKED) {
         SYSTEMTIME d, t;
@@ -994,6 +1222,7 @@ static void wg_settings_apply(HWND dlg) {
         pc_idle_request_reload();
     }
     wg_save_settings();
+    return place;
 }
 
 static LRESULT CALLBACK wg_settings_proc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam) {
@@ -1004,10 +1233,18 @@ static LRESULT CALLBACK wg_settings_proc(HWND hwnd, UINT msg, WPARAM wparam, LPA
                 case IDC_CUSTOM_CLOCK:
                     wg_settings_enable(hwnd);
                     return 0;
-                case IDC_OK:
-                    wg_settings_apply(hwnd);
-                    DestroyWindow(hwnd);
+                case IDC_POSITION:
+                    if (HIWORD(wparam) == CBN_SELCHANGE) wg_settings_enable(hwnd);
                     return 0;
+                case IDC_OK:
+                case IDC_MOVE: {
+                    /* choosing Free place (or Move...) closes the dialog and
+                     * hands the widget to the mouse */
+                    int place = wg_settings_apply(hwnd) || LOWORD(wparam) == IDC_MOVE;
+                    DestroyWindow(hwnd);
+                    if (place) wg_begin_placing();
+                    return 0;
+                }
                 case IDC_CANCEL:
                     DestroyWindow(hwnd);
                     return 0;
@@ -1075,7 +1312,7 @@ static void wg_open_settings(void) {
     ReleaseDC(NULL, screen);
 
     {
-        RECT rc = { 0, 0, MulDiv(340, dpi, 96), MulDiv(278, dpi, 96) };
+        RECT rc = { 0, 0, MulDiv(340, dpi, 96), MulDiv(312, dpi, 96) };
         AdjustWindowRectEx(&rc, WS_CAPTION | WS_SYSMENU, FALSE, WS_EX_DLGMODALFRAME);
         w = rc.right - rc.left;
         h = rc.bottom - rc.top;
@@ -1112,10 +1349,19 @@ static void wg_open_settings(void) {
         }
         SendMessageW(combo, CB_SETCURSEL, sel, 0);
     }
-    wg_ctl(s_settings, L"STATIC", L"Camera speed", 0, 0, 16, 188, 120, 18, dpi);
+    wg_ctl(s_settings, L"STATIC", L"Clock position", 0, 0, 16, 188, 120, 18, dpi);
+    {
+        HWND combo = wg_ctl(s_settings, L"COMBOBOX", L"", CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP, IDC_POSITION,
+                            110, 184, 150, 260, dpi);
+        int i;
+        for (i = 0; i < WG_POS_CHOICES; i++) SendMessageW(combo, CB_ADDSTRING, 0, (LPARAM)s_pos_names[i]);
+        SendMessageW(combo, CB_SETCURSEL, s_pos, 0);
+    }
+    wg_ctl(s_settings, L"BUTTON", L"Move...", WS_TABSTOP, IDC_MOVE, 266, 183, 60, 25, dpi);
+    wg_ctl(s_settings, L"STATIC", L"Camera speed", 0, 0, 16, 222, 120, 18, dpi);
     {
         HWND combo = wg_ctl(s_settings, L"COMBOBOX", L"", CBS_DROPDOWNLIST | WS_VSCROLL | WS_TABSTOP,
-                            IDC_CAMERA_SPEED, 110, 184, 150, 160, dpi);
+                            IDC_CAMERA_SPEED, 110, 218, 150, 160, dpi);
         f32 speed = pc_idle_get_speed();
         int i, sel = 1;
         for (i = 0; i < WG_SPEED_CHOICES; i++) {
@@ -1124,8 +1370,8 @@ static void wg_open_settings(void) {
         }
         SendMessageW(combo, CB_SETCURSEL, sel, 0);
     }
-    wg_ctl(s_settings, L"BUTTON", L"OK", BS_DEFPUSHBUTTON | WS_TABSTOP, IDC_OK, 154, 234, 80, 28, dpi);
-    wg_ctl(s_settings, L"BUTTON", L"Cancel", WS_TABSTOP, IDC_CANCEL, 242, 234, 80, 28, dpi);
+    wg_ctl(s_settings, L"BUTTON", L"OK", BS_DEFPUSHBUTTON | WS_TABSTOP, IDC_OK, 154, 268, 80, 28, dpi);
+    wg_ctl(s_settings, L"BUTTON", L"Cancel", WS_TABSTOP, IDC_CANCEL, 242, 268, 80, 28, dpi);
 
     /* pickers start at the town's current time */
     {
