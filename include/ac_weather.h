@@ -8,7 +8,23 @@
 extern "C" {
 #endif
 
+#ifdef TARGET_PC
+/* The wallpaper idle camera shows far more ground than the gameplay camera,
+ * so particles live in a scaled-up box around it (aWEATHER_AREA_*) and the
+ * pool is larger. Outside idle mode the scales are 1 and nothing changes. */
+#define WEATHER_PRV_COUNT 600
+extern f32 aWeather_AreaScaleX(void);
+extern f32 aWeather_AreaScaleZ(void);
+extern int aWeather_OnScreenX(f32 screen_x);
+#define aWEATHER_AREA_X(v) ((v) * aWeather_AreaScaleX())
+#define aWEATHER_AREA_Z(v) ((v) * aWeather_AreaScaleZ())
+#define aWEATHER_ON_SCREEN_X(x) aWeather_OnScreenX(x)
+#else
 #define WEATHER_PRV_COUNT 100
+#define aWEATHER_AREA_X(v) (v)
+#define aWEATHER_AREA_Z(v) (v)
+#define aWEATHER_ON_SCREEN_X(x) ((x) >= 0.0f && (x) < SCREEN_WIDTH_F)
+#endif
 #define WEATHER_PRV_NO_EXIST_ID -1
 #define WEATHER_PRV_HOLD_TIMER -100
 
@@ -27,7 +43,11 @@ typedef struct ac_weather_priv_s {
     float timer;
     s16 work[5];
     u8 use;
+#ifdef TARGET_PC
+    u16 id; /* pool index; the PC pool is bigger than a u8 */
+#else
     u8 id;
+#endif
     u8 status;
 } aWeather_Priv;
 

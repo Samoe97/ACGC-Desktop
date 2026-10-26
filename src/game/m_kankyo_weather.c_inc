@@ -534,7 +534,12 @@ extern void mEnv_DecideWeather_NormalGameStart() {
 }
 
 extern int mEnv_NowWeather() {
+#ifdef TARGET_PC
+  extern int g_pc_wallpaper_enabled; /* wallpaper: the town's real weather (see mTM_demotime_set) */
+  switch (g_pc_wallpaper_enabled ? mEv_TITLEDEMO_NONE : mEv_CheckTitleDemo()) {
+#else
   switch (mEv_CheckTitleDemo()) {
+#endif
     case mEv_TITLEDEMO_START1:
       return mEnv_WEATHER_SAKURA;
     case mEv_TITLEDEMO_START2:

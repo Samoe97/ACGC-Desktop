@@ -64,8 +64,8 @@ static void aWeatherRain_make(ACTOR* actor, GAME* game) {
 
         priv_num = Common_Get(clip.weather_clip)->get_priv_num(&weather->actor_class);
         if (priv_num != -1) {
-            x = -130.0f + (RANDOM_F(260.0f));
-            z = -200.0f + (RANDOM_F(360.0f));
+            x = aWEATHER_AREA_X(-130.0f + (RANDOM_F(260.0f)));
+            z = aWEATHER_AREA_Z(-200.0f + (RANDOM_F(360.0f)));
 
             pos_mod = pos;
             speed = ZeroVec;

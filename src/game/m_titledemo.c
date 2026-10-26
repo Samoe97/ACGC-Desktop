@@ -75,6 +75,12 @@ extern void mTD_player_keydata_init(GAME_PLAY* play) {
     S_tdemo_frame = 0;
     S_tdemo_time = 0.0f;
     S_tdemo_frame_accum = 0.0f;
+#ifdef TARGET_PC
+    {
+        extern void pc_idle_scene_start(void);
+        pc_idle_scene_start();
+    }
+#endif
 }
 
 static u16 get_tdemo_keydata(int frame) {
@@ -245,7 +251,11 @@ extern void title_demo_move(GAME_PLAY* play) {
         {
             extern int pc_idle_active(void);
             extern void pc_idle_title_demo_move(GAME_PLAY* play);
+            extern int pc_idle_take_reload_request(void);
             if (pc_idle_active()) {
+                if (pc_idle_take_reload_request()) {
+                    mTD_game_end_init(play); /* fade into a fresh scene on the new clock */
+                }
                 pc_idle_title_demo_move(play);
                 return;
             }

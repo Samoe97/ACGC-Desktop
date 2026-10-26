@@ -21,14 +21,20 @@
 #include "m_actor.h"
 #include "sys_math.h"
 #include "m_lib.h"
+#include "m_common_data.h"
 
-/* camera framing: a high three-quarter view, much wider than the 20-degree,
- * ~1240-unit gameplay camera */
+/* camera framing: a high three-quarter view, much wider than the gameplay
+ * camera. Zoom level 1 is this view and 0 is the gameplay camera itself
+ * (Init_Camera2: eye 1240 back at 45 degrees, 20-degree lens); the widget's
+ * zoom slides between them, so zooming in also tilts up. */
 #define IDLE_CAM_DIST       1500.0f
 #define IDLE_CAM_DIST_SWING 150.0f   /* slow zoom breathing */
 #define IDLE_CAM_PITCH_DEG  57.0f    /* elevation above the ground plane */
 #define IDLE_CAM_YAW_SWING  14.0f    /* degrees of slow side-to-side sway */
 #define IDLE_CAM_FOV        28.0f
+#define GAME_CAM_DIST       1240.0f
+#define GAME_CAM_PITCH_DEG  45.0f
+#define GAME_CAM_FOV        20.0f
 #define IDLE_CAM_NEAR       200.0f
 #define IDLE_CAM_FAR        4000.0f
 #define IDLE_CAM_FOLLOW_SEC 2.5f     /* center lag behind the walker */
@@ -44,11 +50,19 @@
 #define IDLE_NPC_CHANCE     0.45f
 #define IDLE_NPC_MIN_DIST   250.0f   /* skip villagers we're already beside */
 
-/* keep the camera center far enough inside the map that the view never shows
- * the void past the border cliffs (the gameplay camera can't see that far) */
-#define IDLE_CAM_MIN_X      (mFI_BK_WORLDSIZE_X_F * 1.55f)
-#define IDLE_CAM_MAX_X      (mFI_BK_WORLDSIZE_X_F * (FG_BLOCK_X_NUM + 0.3f))
-#define IDLE_CAM_MIN_Z      (mFI_BK_WORLDSIZE_Z_F * 1.55f)
+/* The map ends at the outer edge of the border cliffs; past it is void the
+ * gameplay camera never sees. The view's ground footprint is kept inside. */
+#define IDLE_BEND_REACH     1.4f     /* top-of-screen reach vs. a flat world (tuned by eye) */
+#define IDLE_MAP_MIN_X      0.0f
+#define IDLE_MAP_MAX_X      (mFI_BK_WORLDSIZE_X_F * BLOCK_X_NUM)
+#define IDLE_MAP_MIN_Z      0.0f
+#define IDLE_MAP_MARGIN     24.0f
+
+/* user camera controls (the desktop widget) */
+#define IDLE_USER_YAW_MAX   35.0f    /* degrees; acre crossings need a roughly north-up camera */
+#define IDLE_USER_ZOOM_MIN  0.0f     /* the gameplay camera */
+#define IDLE_USER_ZOOM_MAX  1.25f    /* further out would see past the 5x5 ground */
+#define IDLE_USER_EASE_SEC  0.35f
 
 typedef struct {
     int    have_target;
@@ -62,12 +76,41 @@ typedef struct {
     int    cam_init;
     xyz_t  cam_center;
     f32    time_sec;
+
+    int    reload_requested;
+    int    last_day;                     /* for reloading at midnight */
+
+    f32    user_yaw_target, user_yaw;    /* degrees */
+    f32    user_zoom_target, user_zoom;  /* 0 = gameplay camera, 1 = default idle view */
 } pc_idle_state;
 
-static pc_idle_state s_idle;
+static pc_idle_state s_idle = { .user_zoom_target = 1.0f, .user_zoom = 1.0f };
 
 int pc_idle_active(void) {
     return g_pc_wallpaper_active && mEv_IsTitleDemo();
+}
+
+void pc_idle_request_reload(void) {
+    s_idle.reload_requested = TRUE;
+}
+
+int pc_idle_take_reload_request(void) {
+    /* a new day means new weather, events and maybe a new season */
+    int day = Common_Get(time.rtc_time.day);
+    if (s_idle.last_day != 0 && day != s_idle.last_day) s_idle.reload_requested = TRUE;
+    s_idle.last_day = day;
+
+    if (!s_idle.reload_requested) return FALSE;
+    s_idle.reload_requested = FALSE;
+    return TRUE;
+}
+
+void pc_idle_scene_start(void) {
+    s_idle.cam_init = FALSE;
+    s_idle.have_target = FALSE;
+    s_idle.target_npc = NULL;
+    s_idle.wait_sec = 0.0f;
+    s_idle.last_day = Common_Get(time.rtc_time.day);
 }
 
 /* ---- autopilot ---- */
@@ -231,9 +274,71 @@ void pc_idle_title_demo_move(GAME_PLAY* play) {
 
 /* ---- camera ---- */
 
+void pc_idle_user_rotate(f32 degrees) {
+    s_idle.user_yaw_target += degrees;
+    if (s_idle.user_yaw_target > IDLE_USER_YAW_MAX) s_idle.user_yaw_target = IDLE_USER_YAW_MAX;
+    if (s_idle.user_yaw_target < -IDLE_USER_YAW_MAX) s_idle.user_yaw_target = -IDLE_USER_YAW_MAX;
+}
+
+void pc_idle_user_zoom(f32 delta) {
+    s_idle.user_zoom_target += delta;
+    if (s_idle.user_zoom_target > IDLE_USER_ZOOM_MAX) s_idle.user_zoom_target = IDLE_USER_ZOOM_MAX;
+    if (s_idle.user_zoom_target < IDLE_USER_ZOOM_MIN) s_idle.user_zoom_target = IDLE_USER_ZOOM_MIN;
+}
+
+void pc_idle_user_reset(void) {
+    s_idle.user_yaw_target = 0.0f;
+    s_idle.user_zoom_target = 1.0f;
+}
+
+/* Roughly where the four corners of the view land on the ground (a plane
+ * at the camera target's height, stretched at the top for the world bend). */
+static void idle_view_footprint(const xyz_t* eye, const xyz_t* center, f32 fov_y_deg, f32 aspect, f32 far,
+                                f32* min_x, f32* max_x, f32* min_z) {
+    f32 fx = center->x - eye->x, fy = center->y - eye->y, fz = center->z - eye->z;
+    f32 len = sqrtf(fx * fx + fy * fy + fz * fz);
+    f32 rx, rz, rlen, ux, uy, uz, tv, th;
+    int sx, sy;
+
+    fx /= len; fy /= len; fz /= len;
+    /* right = forward x world-up, up = right x forward */
+    rx = -fz; rz = fx;
+    rlen = sqrtf(rx * rx + rz * rz);
+    rx /= rlen; rz /= rlen;
+    ux = -rz * fy; uy = rz * fx - rx * fz; uz = rx * fy;
+
+    tv = tanf(fov_y_deg * 0.5f * (F_PI / 180.0f));
+    th = tv * aspect;
+
+    *min_x = 1e9f; *max_x = -1e9f; *min_z = 1e9f;
+    for (sx = -1; sx <= 1; sx += 2) {
+        for (sy = -1; sy <= 1; sy += 2) {
+            f32 dx = fx + rx * sx * th + ux * sy * tv;
+            f32 dy = fy + uy * sy * tv;
+            f32 dz = fz + rz * sx * th + uz * sy * tv;
+            f32 t = far;
+            f32 px, pz;
+
+            if (dy < -1e-4f) {
+                t = (center->y - eye->y) / dy;
+                /* the world bends away with distance, so the top of the
+                 * screen actually reaches further than the flat hit */
+                if (sy > 0) t *= IDLE_BEND_REACH;
+                if (t > far) t = far;
+            }
+            px = eye->x + dx * t;
+            pz = eye->z + dz * t;
+            if (px < *min_x) *min_x = px;
+            if (px > *max_x) *max_x = px;
+            if (pz < *min_z) *min_z = pz;
+        }
+    }
+}
+
 int pc_idle_camera(GAME_PLAY* play, xyz_t* center, xyz_t* eye, f32* fov_y, f32* near, f32* far) {
     PLAYER_ACTOR* player;
-    f32 dt, follow, dist, pitch, yaw, horiz;
+    f32 dt, follow, ease, dist, pitch, yaw, horiz, fov, z, swing;
+    f32 aspect, min_x, max_x, min_z, shift_x = 0.0f, shift_z = 0.0f;
 
     if (!pc_idle_active()) {
         s_idle.cam_init = FALSE;
@@ -253,30 +358,75 @@ int pc_idle_camera(GAME_PLAY* play, xyz_t* center, xyz_t* eye, f32* fov_y, f32* 
     if (!s_idle.cam_init) {
         /* new scene or just went idle: start on the walker */
         s_idle.cam_center = player->actor_class.world.position;
+        s_idle.user_yaw = s_idle.user_yaw_target;
+        s_idle.user_zoom = s_idle.user_zoom_target;
         s_idle.cam_init = TRUE;
     } else {
         follow = 1.0f - expf(-dt / IDLE_CAM_FOLLOW_SEC);
         s_idle.cam_center.x += (player->actor_class.world.position.x - s_idle.cam_center.x) * follow;
         s_idle.cam_center.y += (player->actor_class.world.position.y - s_idle.cam_center.y) * follow;
         s_idle.cam_center.z += (player->actor_class.world.position.z - s_idle.cam_center.z) * follow;
+
+        ease = 1.0f - expf(-dt / IDLE_USER_EASE_SEC);
+        s_idle.user_yaw += (s_idle.user_yaw_target - s_idle.user_yaw) * ease;
+        s_idle.user_zoom += (s_idle.user_zoom_target - s_idle.user_zoom) * ease;
+    }
+
+    /* zoom: 0..1 blends gameplay camera -> idle view, past 1 just backs off */
+    z = s_idle.user_zoom;
+    if (z <= 1.0f) {
+        dist = GAME_CAM_DIST + (IDLE_CAM_DIST - GAME_CAM_DIST) * z;
+        pitch = GAME_CAM_PITCH_DEG + (IDLE_CAM_PITCH_DEG - GAME_CAM_PITCH_DEG) * z;
+        fov = GAME_CAM_FOV + (IDLE_CAM_FOV - GAME_CAM_FOV) * z;
+        swing = z;
+    } else {
+        dist = IDLE_CAM_DIST * z;
+        pitch = IDLE_CAM_PITCH_DEG;
+        fov = IDLE_CAM_FOV;
+        swing = 1.0f;
     }
 
     /* slow, out-of-phase drifts so the framing never visibly loops */
-    dist = IDLE_CAM_DIST + IDLE_CAM_DIST_SWING * sinf(s_idle.time_sec * (2.0f * F_PI / 170.0f));
-    pitch = (IDLE_CAM_PITCH_DEG + 3.0f * sinf(s_idle.time_sec * (2.0f * F_PI / 230.0f))) * (F_PI / 180.0f);
-    yaw = IDLE_CAM_YAW_SWING * sinf(s_idle.time_sec * (2.0f * F_PI / 300.0f)) * (F_PI / 180.0f);
+    dist += swing * IDLE_CAM_DIST_SWING * sinf(s_idle.time_sec * (2.0f * F_PI / 170.0f));
+    pitch = (pitch + swing * 3.0f * sinf(s_idle.time_sec * (2.0f * F_PI / 230.0f))) * (F_PI / 180.0f);
+    yaw = (s_idle.user_yaw + IDLE_CAM_YAW_SWING * sinf(s_idle.time_sec * (2.0f * F_PI / 300.0f))) * (F_PI / 180.0f);
     horiz = dist * cosf(pitch);
 
-    *center = s_idle.cam_center;
-    if (center->x < IDLE_CAM_MIN_X) center->x = IDLE_CAM_MIN_X;
-    if (center->x > IDLE_CAM_MAX_X) center->x = IDLE_CAM_MAX_X;
-    if (center->z < IDLE_CAM_MIN_Z) center->z = IDLE_CAM_MIN_Z;
     /* the gameplay camera looks north (-z) from the south; keep that, swayed */
+    *center = s_idle.cam_center;
     eye->x = center->x + horiz * sinf(yaw);
     eye->y = center->y + dist * sinf(pitch);
     eye->z = center->z + horiz * cosf(yaw);
-    *fov_y = IDLE_CAM_FOV;
+
+    /* slide the whole view back inside the map if it sees past an edge */
+    aspect = (g_pc_window_h > 0) ? (f32)g_pc_window_w / (f32)g_pc_window_h : (16.0f / 9.0f);
+    idle_view_footprint(eye, center, fov, aspect, IDLE_CAM_FAR, &min_x, &max_x, &min_z);
+    if (max_x - min_x > IDLE_MAP_MAX_X - IDLE_MAP_MIN_X - 2.0f * IDLE_MAP_MARGIN) {
+        shift_x = (IDLE_MAP_MIN_X + IDLE_MAP_MAX_X) * 0.5f - (min_x + max_x) * 0.5f;
+    } else if (min_x < IDLE_MAP_MIN_X + IDLE_MAP_MARGIN) {
+        shift_x = IDLE_MAP_MIN_X + IDLE_MAP_MARGIN - min_x;
+    } else if (max_x > IDLE_MAP_MAX_X - IDLE_MAP_MARGIN) {
+        shift_x = IDLE_MAP_MAX_X - IDLE_MAP_MARGIN - max_x;
+    }
+    if (min_z < IDLE_MAP_MIN_Z + IDLE_MAP_MARGIN) {
+        shift_z = IDLE_MAP_MIN_Z + IDLE_MAP_MARGIN - min_z;
+    }
+    center->x += shift_x; eye->x += shift_x;
+    center->z += shift_z; eye->z += shift_z;
+
+    *fov_y = fov;
     *near = IDLE_CAM_NEAR;
     *far = IDLE_CAM_FAR;
     return TRUE;
+}
+
+void pc_idle_get_clock(int* hour, int* min, int* sec, int* weekday, int* month, int* day) {
+    lbRTC_time_c* t = Common_GetPointer(time.rtc_time);
+
+    *hour = t->hour;
+    *min = t->min;
+    *sec = t->sec;
+    *weekday = t->weekday;
+    *month = t->month;
+    *day = t->day;
 }

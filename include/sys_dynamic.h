@@ -24,12 +24,25 @@ extern "C" {
 #define FONT_SIZE 256
 */
 
+#ifdef TARGET_PC
+/* Much more headroom on PC: the wallpaper idle camera draws a full 3x3 of
+ * trees/items and a screen-wide weather pool, and GRAPH_ALLOC (matrices,
+ * vertices) carves its space out of the tail of poly_opa. Overflowing these
+ * silently corrupts memory. */
+#define POLY_OPA_SIZE 65536
+#define POLY_XLU_SIZE 16384
+#else
 #define POLY_OPA_SIZE 9952
 #define POLY_XLU_SIZE 2048
+#endif
 #define OVERLAY_SIZE 1024
 #define WORK_SIZE 128
 #define UNK_BUF0_SIZE 32
+#ifdef TARGET_PC
+#define FONT_SIZE 4096
+#else
 #define FONT_SIZE 1792
+#endif
 #define SHADOW_SIZE 512
 #define LIGHT_SIZE 256
 #define NEW0_SIZE 512

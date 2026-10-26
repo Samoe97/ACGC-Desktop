@@ -1533,9 +1533,21 @@ extern int mFI_GetItemTable_NoReset(mFI_item_table_c* item_table, xyz_t wpos) {
         block_z_tbl[i] = item_table->block_info_tbl[i].block_z;
     }
 
+#ifdef TARGET_PC
+    /* The row pass below gives the left and right neighbours the same table
+     * index (it was written for a 2x2, so a row never had both). With the
+     * idle camera's 3x3 that overwrote one of them and its trees vanished, so
+     * only pin the player's own block here; the second pass adds the rest. */
+    int row_checks = g_fdinfo->bg_num >= 9 ? 1 : 3;
+    int row_max = g_fdinfo->bg_num >= 9 ? 1 : 2;
+#else
+    int row_checks = 3;
+    int row_max = 2;
+#endif
+
     for (i = 0; i < mFM_VISIBLE_BLOCK_NUM; i++) {
         if (mFI_CheckFinishBgDma(i) == TRUE && bg_disp->block_z == bz) {
-            for (j = 0; j < 3; j++) {
+            for (j = 0; j < row_checks; j++) {
                 int bx_near = bx + check_x[j];
 
                 t_no = table_no[j];
@@ -1554,7 +1566,7 @@ extern int mFI_GetItemTable_NoReset(mFI_item_table_c* item_table, xyz_t wpos) {
             }
         }
 
-        if (_num >= 2) {
+        if (_num >= row_max) {
             break;
         }
 

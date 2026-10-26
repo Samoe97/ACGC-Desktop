@@ -79,6 +79,12 @@ extern int           g_pc_weather_override;
 extern int           g_pc_weather_intensity_override;
 extern u32           g_frame_limiter;
 
+/* Game clock = PC clock + offset (seconds). pc_os_resync_clock pulls it back
+ * onto that after drift (sleep); force applies even a small difference. */
+void pc_os_set_clock_offset(s64 secs);
+s64  pc_os_get_clock_offset(void);
+void pc_os_resync_clock(int force);
+
 extern int g_pc_window_w;
 extern int g_pc_window_h;
 void pc_platform_update_window_size(void);

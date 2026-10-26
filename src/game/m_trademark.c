@@ -94,6 +94,18 @@ static void mTM_demotime_set(int title_no) {
         { lbRTC_FEBRUARY, 1, 2, mEnv_WEATHER_SNOW }    /* February 1st @ 2am, Snowing */
     };
 
+#ifdef TARGET_PC
+    /* The desktop wallpaper shows the town as it is right now: real date,
+     * time (still ticking) and the town's own weather, not the demo's. */
+    {
+        extern int g_pc_wallpaper_enabled;
+        if (g_pc_wallpaper_enabled) {
+            lbRTC_GetTime(Common_GetPointer(time.rtc_time));
+            Common_Set(time.rtc_enabled, TRUE);
+            return;
+        }
+    }
+#endif
     Common_Set(time.rtc_enabled, FALSE);
     Common_Set(time.rtc_time.year, GAME_YEAR_MIN + 1);
     Common_Set(time.rtc_time.min, 0);

@@ -7,6 +7,9 @@
 #include "ac_weather_leaf.h"
 
 #include "m_common_data.h"
+#ifdef TARGET_PC
+#include "main.h"
+#endif
 #include "m_rcp.h"
 #include "m_field_info.h"
 #include "m_malloc.h"
@@ -341,6 +344,38 @@ static void aWeather_SetNowProfile(ACTOR* actorx, s16 id) {
     }
 }
 
+#ifdef TARGET_PC
+extern int pc_idle_active(void);
+extern int g_pc_window_w;
+extern int g_pc_window_h;
+
+/* Size of the particle box relative to the original (~200 x 380 units,
+ * centred on the camera target). The idle camera's ground footprint is about
+ * 9x wider and 4.5x deeper; with the box bigger than the view, particles on
+ * screen stay put in world space and only wrap around well off-screen. */
+#define aWEATHER_IDLE_SCALE_X 9.0f
+#define aWEATHER_IDLE_SCALE_Z 4.5f
+/* make() calls per tick while idle, to keep a similar density over the
+ * bigger box; the pool size caps the total */
+#define aWEATHER_IDLE_SPAWN_REPS 16
+
+f32 aWeather_AreaScaleX(void) {
+    return pc_idle_active() ? aWEATHER_IDLE_SCALE_X : 1.0f;
+}
+
+f32 aWeather_AreaScaleZ(void) {
+    return pc_idle_active() ? aWEATHER_IDLE_SCALE_Z : 1.0f;
+}
+
+/* Widescreen hor+ shows more than the 4:3 screen the projection maps to. */
+int aWeather_OnScreenX(f32 screen_x) {
+    f32 extra = (SCREEN_WIDTH_F * 0.5f) * ((f32)g_pc_window_w / (f32)g_pc_window_h * 0.75f - 1.0f);
+
+    if (extra < 0.0f) extra = 0.0f;
+    return screen_x >= -extra && screen_x < SCREEN_WIDTH_F + extra;
+}
+#endif
+
 extern int aWeather_ShouldSpawnEvery(ACTOR* actorx, f32 period_frames) {
     WEATHER_ACTOR* weather = (WEATHER_ACTOR*)actorx;
 
@@ -438,7 +473,12 @@ static void Weather_Actor_ct(ACTOR* actor, GAME* game) {
 
     aWeather_SetClip(actor, FALSE);
 
+#ifdef TARGET_PC
+    extern int g_pc_wallpaper_enabled; /* wallpaper: the town's real weather (see mTM_demotime_set) */
+    if (mEv_IsTitleDemo() && !g_pc_wallpaper_enabled) {
+#else
     if (mEv_IsTitleDemo()) {
+#endif
         cur = mEv_CheckTitleDemo() - mEv_TITLEDEMO_START1;
 
         weather->current_status = DemoWeatherTbl[cur][0];
@@ -562,6 +602,9 @@ static void aWeather_MakeWeatherPrv(ACTOR* actor, GAME* game) {
         if (weather->current_profile != NULL) {
             if (weather->current_profile->make != NULL) {
                 ticks = graph_dt_60hz_ticks(game, &weather->make_accum);
+#ifdef TARGET_PC
+                if (pc_idle_active()) ticks *= aWEATHER_IDLE_SPAWN_REPS;
+#endif
                 for (i = 0; i < ticks; i++) {
                     weather->current_profile->make(actor, game);
                 }

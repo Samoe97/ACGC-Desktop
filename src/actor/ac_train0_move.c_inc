@@ -161,6 +161,17 @@ static void aTR0_delcheck(ACTOR* actor, GAME* game) {
     x -= play->block_table.block_x;
     abs_x = x >= 0 ? x : -x;
 
+#ifdef TARGET_PC
+    /* The wallpaper idle camera still sees the rail row from one acre south. */
+    {
+        extern int pc_idle_active(void);
+        int dz = z - play->block_table.block_z;
+
+        if (pc_idle_active() && (dz == 1 || dz == -1)) {
+            z = play->block_table.block_z;
+        }
+    }
+#endif
     if ((abs_x >= 2) || (z != play->block_table.block_z) || (train0->action == 0)) {
         if (train0->arg3 != 0) {
             Actor_delete((ACTOR*)train0->arg3);

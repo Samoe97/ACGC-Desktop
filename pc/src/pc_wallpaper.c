@@ -17,6 +17,7 @@
  * owned by the main thread, so SDL's event pump dispatches their messages. */
 #include "pc_platform.h"
 #include "pc_wallpaper.h"
+#include "pc_widget.h"
 
 int g_pc_wallpaper_enabled = 0;
 int g_pc_wallpaper_active = 0;
@@ -145,6 +146,8 @@ static void wp_enter_wallpaper(void) {
 
     g_pc_wallpaper_active = 1;
     pc_platform_update_window_size();
+    pc_widget_attach(); /* also re-attaches after an Explorer restart */
+    pc_widget_set_visible(TRUE);
     wp_log(icons_above != NULL ? "attached to Progman (24H2+ layout)" : "attached to WorkerW");
 }
 
@@ -164,9 +167,17 @@ static void wp_enter_play(void) {
     }
 
     g_pc_wallpaper_active = 0;
+    pc_widget_set_visible(FALSE);
     SDL_SetWindowFullscreen(g_pc_window, SDL_WINDOW_FULLSCREEN_DESKTOP);
     SDL_RaiseWindow(g_pc_window);
-    SetForegroundWindow(s_game_hwnd);
+    if (!SetForegroundWindow(s_game_hwnd)) {
+        /* Only the process that got the last input may hand out focus, and a
+         * click on the desktop panel can count as Explorer's. A tap of Alt is
+         * input to us and lifts that lock. */
+        keybd_event(VK_MENU, 0, 0, 0);
+        keybd_event(VK_MENU, 0, KEYEVENTF_KEYUP, 0);
+        SetForegroundWindow(s_game_hwnd);
+    }
     pc_platform_update_window_size();
     wp_log("play mode");
 }
@@ -244,6 +255,10 @@ static LRESULT CALLBACK wp_msg_proc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM l
         }
         return 0;
     }
+    if (msg == WM_POWERBROADCAST && (wparam == PBT_APMRESUMEAUTOMATIC || wparam == PBT_APMRESUMESUSPEND)) {
+        pc_os_resync_clock(FALSE);
+        return TRUE;
+    }
     if (s_taskbar_created_msg != 0 && msg == s_taskbar_created_msg) {
         /* Explorer restarted: the tray and the desktop host windows are new */
         s_tray_added = 0;
@@ -296,12 +311,20 @@ void pc_wallpaper_init(void) {
         wp_log("Ctrl+Alt+W is taken by another program");
     }
     wp_tray_add();
+    pc_widget_load_settings();
 
     wp_enter_wallpaper();
 }
 
 void pc_wallpaper_update(void) {
     int req = s_request;
+    static Uint32 last_resync = 0;
+
+    /* keep the town clock on the PC's (it drifts while the PC sleeps) */
+    if (g_pc_wallpaper_enabled && SDL_GetTicks() - last_resync > 60000) {
+        last_resync = SDL_GetTicks();
+        pc_os_resync_clock(FALSE);
+    }
 
     if (!g_pc_wallpaper_enabled || req == WP_REQ_NONE) return;
     s_request = WP_REQ_NONE;
@@ -322,6 +345,7 @@ void pc_wallpaper_shutdown(void) {
         SetParent(s_game_hwnd, NULL);
         g_pc_wallpaper_active = 0;
     }
+    pc_widget_destroy();
     wp_tray_remove();
     UnregisterHotKey(s_msg_hwnd, WP_HOTKEY_PLAY);
     UnregisterHotKey(s_msg_hwnd, WP_HOTKEY_WALLPAPER);

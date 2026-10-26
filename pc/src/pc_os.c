@@ -23,11 +23,56 @@ static s64 gc_epoch_offset_ticks = 0; /* Ticks from GC epoch to program start */
 /* GC epoch: Jan 1, 2000 (946684800 seconds after Unix epoch) */
 #define GC_UNIX_EPOCH_DIFF 946684800LL
 
+/* Seconds added to the PC's clock for the game clock: the --time/--date
+ * overrides and the wallpaper's custom date/time setting both become an
+ * offset, so an overridden clock keeps ticking. */
+static s64 s_clock_offset_secs = 0;
+
 s64 osGetTime(void) {
     u64 now = SDL_GetPerformanceCounter();
     u64 freq = SDL_GetPerformanceFrequency();
-    s64 elapsed = (s64)((now - time_base_start) * (u64)GC_TIMER_CLOCK / freq);
+    u64 diff = now - time_base_start;
+    /* split so diff * GC_TIMER_CLOCK can't overflow 64 bits (it did after
+     * ~12.5h of uptime at a 10 MHz counter) */
+    s64 elapsed = (s64)((diff / freq) * (u64)GC_TIMER_CLOCK + (diff % freq) * (u64)GC_TIMER_CLOCK / freq);
     return gc_epoch_offset_ticks + elapsed;
+}
+
+/* GC-epoch seconds for "now" on the PC clock plus the offset, in local time. */
+static s64 pc_os_wall_gc_secs(void) {
+    time_t unix_now = time(NULL);
+    struct tm* gmt = gmtime(&unix_now);
+    struct tm utc_tm;
+    time_t utc_as_local;
+    s64 tz_offset_secs;
+
+    if (!gmt) return (s64)(unix_now - GC_UNIX_EPOCH_DIFF) + s_clock_offset_secs;
+    utc_tm = *gmt;
+    utc_tm.tm_isdst = -1; /* let mktime determine DST */
+    utc_as_local = mktime(&utc_tm);
+    tz_offset_secs = (s64)difftime(unix_now, utc_as_local);
+    return (s64)(unix_now - GC_UNIX_EPOCH_DIFF) + tz_offset_secs + s_clock_offset_secs;
+}
+
+/* Pull the game clock back onto the PC clock (+offset). The performance
+ * counter can stop while the PC sleeps, so a long-running wallpaper drifts.
+ * Small differences are left alone so game timers don't see jitter. */
+void pc_os_resync_clock(int force) {
+    s64 target = pc_os_wall_gc_secs() * (s64)GC_TIMER_CLOCK;
+    s64 diff = target - osGetTime();
+
+    if (force || diff > 2 * (s64)GC_TIMER_CLOCK || diff < -2 * (s64)GC_TIMER_CLOCK) {
+        gc_epoch_offset_ticks += diff;
+    }
+}
+
+void pc_os_set_clock_offset(s64 secs) {
+    s_clock_offset_secs = secs;
+    if (time_base_start != 0) pc_os_resync_clock(TRUE);
+}
+
+s64 pc_os_get_clock_offset(void) {
+    return s_clock_offset_secs;
 }
 
 s64 OSGetTime(void) { return osGetTime(); }
@@ -249,38 +294,26 @@ void OSInit(void) {
     }
     time_base_start = SDL_GetPerformanceCounter();
     /* compute ticks from GC epoch (Jan 1, 2000) to now, with timezone */
-    {
+    if (g_pc_time_override >= 0 || g_pc_date_month > 0) {
+        /* --time H[:M[:S]] / --date M/D[/Y] overrides, kept as an offset */
         time_t unix_now = time(NULL);
-
-        struct tm* gmt = gmtime(&unix_now);
-        if (!gmt) { gc_epoch_offset_ticks = 0; return; }
-        struct tm utc_tm = *gmt;
-        utc_tm.tm_isdst = -1; /* let mktime determine DST */
-        time_t utc_as_local = mktime(&utc_tm);
-        s64 tz_offset_secs = (s64)difftime(unix_now, utc_as_local);
-
-        if (g_pc_time_override >= 0 || g_pc_date_month > 0) {
-            /* --time H[:M[:S]] / --date M/D[/Y] overrides */
-            struct tm* lt = localtime(&unix_now);
-            if (lt) {
-                struct tm ovr = *lt;
-                if (g_pc_date_month > 0) {
-                    ovr.tm_mon = g_pc_date_month - 1;
-                    ovr.tm_mday = g_pc_date_day;
-                    if (g_pc_date_year > 0) ovr.tm_year = g_pc_date_year - 1900;
-                }
-                if (g_pc_time_override >= 0) ovr.tm_hour = g_pc_time_override;
-                if (g_pc_min_override >= 0) ovr.tm_min = g_pc_min_override;
-                if (g_pc_sec_override >= 0) ovr.tm_sec = g_pc_sec_override;
-                ovr.tm_isdst = -1;
-                time_t ovr_time = mktime(&ovr);
-                if (ovr_time != (time_t)-1) unix_now = ovr_time;
+        struct tm* lt = localtime(&unix_now);
+        if (lt) {
+            struct tm ovr = *lt;
+            if (g_pc_date_month > 0) {
+                ovr.tm_mon = g_pc_date_month - 1;
+                ovr.tm_mday = g_pc_date_day;
+                if (g_pc_date_year > 0) ovr.tm_year = g_pc_date_year - 1900;
             }
+            if (g_pc_time_override >= 0) ovr.tm_hour = g_pc_time_override;
+            if (g_pc_min_override >= 0) ovr.tm_min = g_pc_min_override;
+            if (g_pc_sec_override >= 0) ovr.tm_sec = g_pc_sec_override;
+            ovr.tm_isdst = -1;
+            time_t ovr_time = mktime(&ovr);
+            if (ovr_time != (time_t)-1) s_clock_offset_secs = (s64)difftime(ovr_time, unix_now);
         }
-
-        s64 gc_secs = (s64)(unix_now - GC_UNIX_EPOCH_DIFF) + tz_offset_secs;
-        gc_epoch_offset_ticks = gc_secs * (s64)GC_TIMER_CLOCK;
     }
+    gc_epoch_offset_ticks = pc_os_wall_gc_secs() * (s64)GC_TIMER_CLOCK;
 }
 
 void OSInitAlarm(void) { }

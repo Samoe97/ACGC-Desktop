@@ -47,8 +47,8 @@ static void aWeatherSakura_make(ACTOR* actor, GAME* game) {
     if (aWeatherSakura_DecideMakeSakuraCount(actor, game) != 0) {
         base.y = -0.8f + (RANDOM_F(-0.1f));
         if (count != -1) {
-            x = -100.0f + (RANDOM_F(200.0f));
-            z = -200.0f + (RANDOM_F(380.0f));
+            x = aWEATHER_AREA_X(-100.0f + (RANDOM_F(200.0f)));
+            z = aWEATHER_AREA_Z(-200.0f + (RANDOM_F(380.0f)));
 
             mod_pos = pos;
 
@@ -83,18 +83,18 @@ static int aWeatherSakura_CheckSakuraBorder(aWeather_Priv* priv) {
         pos = weather->pos;
         sakuraTemp = priv->pos.x;
 
-        if (sakuraTemp < (-100.0f + pos.x)) {
+        if (sakuraTemp < (aWEATHER_AREA_X(-100.0f) + pos.x)) {
             ret |= 2;
         }
-        if (sakuraTemp > (100.0f + pos.x)) {
+        if (sakuraTemp > (aWEATHER_AREA_X(100.0f) + pos.x)) {
             ret |= 8;
         }
         sakuraTemp = priv->pos.z;
 
-        if (sakuraTemp > (180.0f + pos.z)) {
+        if (sakuraTemp > (aWEATHER_AREA_Z(180.0f) + pos.z)) {
             ret |= 4;
         }
-        if (sakuraTemp < (-200.0f + pos.z)) {
+        if (sakuraTemp < (aWEATHER_AREA_Z(-200.0f) + pos.z)) {
             ret |= 1;
         }
     }
@@ -107,16 +107,16 @@ static void aWeatherSakura_CheckSakuraScroll(aWeather_Priv* priv) {
 
     if (border != 0) {
         if ((border >> 1) & 1) {
-            priv->pos.x += 200.0f;
+            priv->pos.x += aWEATHER_AREA_X(200.0f);
         }
         if ((border >> 3) & 1) {
-            priv->pos.x -= 200.0f;
+            priv->pos.x -= aWEATHER_AREA_X(200.0f);
         }
         if ((border >> 2) & 1) {
-            priv->pos.z -= 380.0f;
+            priv->pos.z -= aWEATHER_AREA_Z(380.0f);
         }
         if (border & 1) {
-            priv->pos.z += 380.0f;
+            priv->pos.z += aWEATHER_AREA_Z(380.0f);
         }
     }
 
@@ -184,7 +184,7 @@ void aWeatherSakura_draw(aWeather_Priv* priv, GAME* game) {
     pos.y = priv->pos.y;
     Game_play_Projection_Trans(play, &pos, &screen_pos);
 
-    if ((screen_pos.x >= 0.0f) && (screen_pos.x < SCREEN_WIDTH_F) && (screen_pos.y >= 0.0f) &&
+    if (aWEATHER_ON_SCREEN_X(screen_pos.x) && (screen_pos.y >= 0.0f) &&
         (screen_pos.y < SCREEN_HEIGHT_F)) {
 
         work = GRAPH_ALLOC_TYPE(game->graph, Mtx, 1);

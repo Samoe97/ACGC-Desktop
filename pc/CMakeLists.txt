@@ -300,6 +300,7 @@ set(PC_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/src/pc_disc.c
     ${CMAKE_CURRENT_SOURCE_DIR}/src/pc_wallpaper.c
     ${CMAKE_CURRENT_SOURCE_DIR}/src/pc_idle.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/pc_widget.c
 )
 
 # =============================================================================
@@ -427,7 +428,7 @@ else()
 endif()
 
 if(WIN32)
-    target_link_libraries(ac_pc opengl32 winmm imm32 version setupapi shell32)
+    target_link_libraries(ac_pc opengl32 winmm imm32 version setupapi shell32 comctl32)
 else()
     find_package(OpenGL REQUIRED)
     target_link_libraries(ac_pc OpenGL::GL dl pthread m)
