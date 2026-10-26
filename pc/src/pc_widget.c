@@ -38,6 +38,8 @@
 #define WG_TIMER_REPEAT 2
 #define WG_TIMER_ANIM   3
 #define WG_TIMER_TIP    4
+#define WG_TIMER_SLIDER 5   /* closes the volume slider after the mouse leaves */
+#define WG_SLIDER_LINGER_MS 2500
 #define WG_TICK_MS         250
 #define WG_REPEAT_DELAY_MS 350
 #define WG_REPEAT_MS       90
@@ -63,6 +65,7 @@ enum {
     WG_BTN_DRAWER, /* the drawer itself: click to open/close */
     WG_BTN_ACCEPT, /* free placement */
     WG_BTN_CANCEL,
+    WG_BTN_SLIDER, /* the volume slider above the sound button */
     WG_BTN_NUM
 };
 
@@ -142,15 +145,15 @@ static f32  s_paint_alpha = 1.0f; /* multiplies everything drawn (fading the dra
 static HWND s_tip = NULL;
 static int  s_tip_for = WG_BTN_NONE;
 static int  s_hide_clock = FALSE; /* only Play and settings, no date/time */
-static int  s_muted = TRUE;       /* the sound button: idle audio off */
-static int  s_music_volume = 50;  /* idle volume when not muted, % of master */
+static int  s_music_volume = 0;   /* idle volume, % of master; the sound button's slider sets it */
+static int  s_slider_open = FALSE; /* the volume slider above the sound button */
 
 static const wg_frame_def* wg_frame(void) {
     return s_hide_clock ? &s_frame_compact : &s_frame_clock;
 }
 
 static void wg_apply_volume(void) {
-    g_pc_wallpaper_volume = s_muted ? 0 : s_music_volume;
+    g_pc_wallpaper_volume = s_music_volume;
 }
 
 /* "Clock position": a corner, the middle of an edge, or free (dragged into
@@ -208,10 +211,10 @@ void pc_widget_load_settings(void) {
     char path[MAX_PATH];
     char line[256];
     FILE* f;
+    int muted = FALSE; /* from older files, which had a mute toggle */
 
-    /* --wallpaper-volume sets the starting sound; the ini overrides it */
-    s_muted = g_pc_wallpaper_volume == 0;
-    if (g_pc_wallpaper_volume > 0) s_music_volume = g_pc_wallpaper_volume;
+    /* --wallpaper-volume sets the starting volume; the ini overrides it */
+    s_music_volume = g_pc_wallpaper_volume;
 
     wg_ini_path(path, sizeof(path));
     f = fopen(path, "r");
@@ -222,8 +225,8 @@ void pc_widget_load_settings(void) {
         char word[32];
         int i, n;
         if (sscanf(line, " music_muted = %d", &n) == 1) {
-            s_muted = n != 0;
-        } else if (sscanf(line, " music_volume = %d", &n) == 1 && n >= 1 && n <= 100) {
+            muted = n != 0;
+        } else if (sscanf(line, " music_volume = %d", &n) == 1 && n >= 0 && n <= 100) {
             s_music_volume = n;
         } else if (sscanf(line, " hide_clock = %d", &n) == 1) {
             s_hide_clock = n != 0;
@@ -244,6 +247,7 @@ void pc_widget_load_settings(void) {
         }
     }
     fclose(f);
+    if (muted) s_music_volume = 0;
     wg_apply_volume();
 }
 
@@ -269,9 +273,8 @@ static void wg_save_settings(void) {
     fprintf(f, "hide_clock = %d\n", s_hide_clock);
     fprintf(f, "# Camera/walker pace while idle (1.0 = original pace; Slow = 0.6)\n");
     fprintf(f, "camera_speed = %.2f\n", pc_idle_get_speed());
-    fprintf(f, "# Music and sound while idle: the widget's sound button toggles music_muted;\n");
-    fprintf(f, "# music_volume is the level when on, as %% of the game's master volume\n");
-    fprintf(f, "music_muted = %d\n", s_muted);
+    fprintf(f, "# Music and sound while idle, as %% of the game's master volume (0 = silent);\n");
+    fprintf(f, "# set with the slider on the widget's sound button\n");
     fprintf(f, "music_volume = %d\n", s_music_volume);
     fclose(f);
 }
@@ -424,6 +427,7 @@ enum {
     ICON_PLAY,
     ICON_CHEVRON,
     ICON_SOUND_ON,
+    ICON_SOUND_LOW,
     ICON_SOUND_OFF
 };
 
@@ -479,8 +483,9 @@ static int icon_inside(f32 x, f32 y, int icon) {
         case ICON_PLAY:
             return in_triangle(x, y, -5.5f, -9.0f, -5.5f, 9.0f, 9.5f, 0.0f);
         case ICON_SOUND_ON:
+        case ICON_SOUND_LOW:
         case ICON_SOUND_OFF: {
-            /* speaker, then sound waves or a cross */
+            /* speaker, then one or two sound waves, or a cross */
             int body = x >= -12.0f && x <= -6.0f && fabsf(y) <= 3.8f;
             int cone = in_triangle(x, y, -6.0f, -3.8f, 0.0f, -9.5f, 0.0f, 9.5f) ||
                        in_triangle(x, y, -6.0f, -3.8f, 0.0f, 9.5f, -6.0f, 3.8f);
@@ -490,7 +495,7 @@ static int icon_inside(f32 x, f32 y, int icon) {
             } else {
                 f32 wr = sqrtf((x - 1.0f) * (x - 1.0f) + y * y);
                 int in_fan = x > 2.0f && fabsf(atan2f(y, x - 1.0f)) < 0.85f;
-                return in_fan && (fabsf(wr - 5.5f) < 1.5f || fabsf(wr - 10.5f) < 1.5f);
+                return in_fan && (fabsf(wr - 5.5f) < 1.5f || (icon == ICON_SOUND_ON && fabsf(wr - 10.5f) < 1.5f));
             }
         }
         case ICON_CHEVRON: /* pointing down */
@@ -581,7 +586,8 @@ static int wg_btn_icon(int btn) {
         case WG_BTN_ZOOM_OUT: return ICON_MINUS;
         case WG_BTN_ZOOM_IN:  return ICON_PLUS;
         case WG_BTN_RESET:    return ICON_HOME;
-        case WG_BTN_SOUND:    return s_muted ? ICON_SOUND_OFF : ICON_SOUND_ON;
+        case WG_BTN_SOUND:
+            return s_music_volume == 0 ? ICON_SOUND_OFF : s_music_volume < 50 ? ICON_SOUND_LOW : ICON_SOUND_ON;
     }
     return ICON_GEAR;
 }
@@ -591,6 +597,55 @@ static u32 wg_mix(u32 a, u32 b, f32 t) {
     u32 g = (u32)(((a >> 8) & 0xFF) + ((f32)((b >> 8) & 0xFF) - ((a >> 8) & 0xFF)) * t + 0.5f);
     u32 bl = (u32)((a & 0xFF) + ((f32)(b & 0xFF) - (a & 0xFF)) * t + 0.5f);
     return RGBc(r, g, bl);
+}
+
+/* the volume slider: a tan panel standing on the sound button, with the
+ * level on top and a vertical track (the closed drawer's brown, filled with
+ * the date ovals' lime) and a white knob. 96-DPI units. */
+#define WG_SLIDER_HW 15.0f
+#define WG_SLIDER_H  84.0f
+
+typedef struct {
+    f32 cx, top, bottom; /* panel */
+    f32 t0, t1;          /* track: t0 = 100%, t1 = 0% */
+} wg_slider_geom;
+
+static void wg_get_slider(const wg_layout* l, wg_slider_geom* g) {
+    f32 bx, by;
+
+    wg_btn_center(WG_BTN_SOUND, l, &bx, &by);
+    g->cx = bx;
+    g->bottom = by - WG_BTN_R - 2.0f;
+    g->top = g->bottom - WG_SLIDER_H;
+    g->t0 = g->top + 24.0f;
+    g->t1 = g->bottom - 10.0f;
+}
+
+static void wg_render_slider(wg_canvas* cv, const wg_layout* l) {
+    wg_slider_geom g;
+    f32 cx, cy, hh, level_y, rimw = wg_s(2.2f);
+    WCHAR buf[8];
+
+    wg_get_slider(l, &g);
+    cx = wg_s(g.cx);
+    cy = wg_s((g.top + g.bottom) * 0.5f);
+    hh = wg_s(WG_SLIDER_H * 0.5f);
+    cv_rrect(cv, cx + wg_s(1.0f), cy + wg_s(2.0f), wg_s(WG_SLIDER_HW), hh, wg_s(12), COL_BLACK, 0.30f);
+    cv_rrect(cv, cx, cy, wg_s(WG_SLIDER_HW), hh, wg_s(12), COL_AMPM_FILL, 1.0f);
+    cv_rrect(cv, cx, cy, wg_s(WG_SLIDER_HW) - rimw, hh - rimw, wg_s(12) - rimw, COL_BTN_FILL, 1.0f);
+
+    swprintf(buf, 8, L"%d", s_music_volume);
+    cv_text(cv, buf, s_font_label, cx, wg_s(g.top + 12.0f), COL_BTN_ICON, 1.0f);
+
+    level_y = g.t1 - (g.t1 - g.t0) * s_music_volume / 100.0f;
+    cv_rrect(cv, cx, wg_s((g.t0 + g.t1) * 0.5f), wg_s(3.5f), wg_s((g.t1 - g.t0) * 0.5f + 3.5f), wg_s(3.5f),
+             COL_AMPM_FILL, 1.0f);
+    if (s_music_volume > 0) {
+        cv_rrect(cv, cx, wg_s((level_y + g.t1) * 0.5f), wg_s(2.0f), wg_s((g.t1 - level_y) * 0.5f + 2.0f), wg_s(2.0f),
+                 COL_DATE_FILL, 1.0f);
+    }
+    cv_badge(cv, cx, wg_s(level_y), wg_s(7.0f), wg_s(7.0f), s_hot == WG_BTN_SLIDER ? COL_BTN_HOT : COL_TIME_FILL,
+             COL_BTN_RIM, FALSE);
 }
 
 static void wg_render_drawer(wg_canvas* cv, const wg_layout* l) {
@@ -635,6 +690,7 @@ static void wg_render_drawer(wg_canvas* cv, const wg_layout* l) {
         cv_badge(cv, wg_s(bx), wg_s(by), br, br, s_hot == b ? COL_BTN_HOT : COL_TIME_FILL, COL_BTN_RIM, FALSE);
         cv_icon(cv, wg_btn_icon(b), wg_s(bx), wg_s(by), br * 1.45f, COL_BTN_ICON);
     }
+    if (s_slider_open) wg_render_slider(cv, l);
     s_paint_alpha = 1.0f;
 }
 
@@ -841,6 +897,13 @@ static int wg_hit(int x, int y) {
         return WG_BTN_NONE;
     }
     wg_get_layout(&l);
+    if (s_slider_open && l.open > 0.9f) {
+        wg_slider_geom g;
+        wg_get_slider(&l, &g);
+        if (fabsf(fx - wg_s(g.cx)) <= wg_s(WG_SLIDER_HW) && fy >= wg_s(g.top) && fy <= wg_s(g.bottom)) {
+            return WG_BTN_SLIDER;
+        }
+    }
     {
         const wg_frame_def* fr = wg_frame();
         f32 cx, cy;
@@ -908,7 +971,7 @@ static const WCHAR* wg_tip_text(int btn) {
         case WG_BTN_ZOOM_OUT: return L"Zoom out";
         case WG_BTN_ZOOM_IN:  return L"Zoom in";
         case WG_BTN_RESET:    return L"Reset camera";
-        case WG_BTN_SOUND:    return s_muted ? L"Turn music on" : L"Mute music";
+        case WG_BTN_SOUND:    return L"Music volume";
         case WG_BTN_SETTINGS: return L"Settings";
         case WG_BTN_PLAY:     return L"Play  (Ctrl+Alt+P)";
         case WG_BTN_DRAWER:
@@ -1036,6 +1099,36 @@ static void wg_end_placing(int accept) {
     wg_place_and_paint(TRUE);
 }
 
+/* ---- volume slider ---- */
+
+static void wg_set_volume(int v) {
+    if (v < 0) v = 0;
+    if (v > 100) v = 100;
+    if (v == s_music_volume) return;
+    s_music_volume = v;
+    wg_apply_volume();
+    wg_place_and_paint(TRUE);
+}
+
+/* y in client pixels -> volume along the track */
+static void wg_slider_drag(int y) {
+    wg_layout l;
+    wg_slider_geom g;
+    f32 uy = (f32)y / wg_s(1.0f);
+
+    wg_get_layout(&l);
+    wg_get_slider(&l, &g);
+    wg_set_volume((int)((g.t1 - uy) / (g.t1 - g.t0) * 100.0f + 0.5f));
+}
+
+static void wg_close_slider(void) {
+    KillTimer(s_hwnd, WG_TIMER_SLIDER);
+    if (s_slider_open) {
+        s_slider_open = FALSE;
+        wg_place_and_paint(TRUE);
+    }
+}
+
 static void wg_press(int btn) {
     switch (btn) {
         case WG_BTN_ACCEPT:   wg_end_placing(TRUE); break;
@@ -1046,15 +1139,14 @@ static void wg_press(int btn) {
         case WG_BTN_ZOOM_IN:  pc_idle_user_zoom(-WG_ZOOM_STEP); break;
         case WG_BTN_RESET:    pc_idle_user_reset(); break;
         case WG_BTN_SOUND:
-            s_muted = !s_muted;
-            wg_apply_volume();
-            wg_save_settings();
+            s_slider_open = !s_slider_open;
             wg_place_and_paint(TRUE);
             break;
         case WG_BTN_SETTINGS: wg_open_settings(); break;
         case WG_BTN_PLAY:     pc_wallpaper_request_play(); break;
         case WG_BTN_DRAWER:
             s_open = !s_open;
+            s_slider_open = FALSE;
             wg_anim_start();
             break;
     }
@@ -1077,12 +1169,19 @@ static LRESULT CALLBACK wg_proc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lpara
             } else if (wparam == WG_TIMER_TIP) {
                 KillTimer(hwnd, WG_TIMER_TIP);
                 if (s_hot != WG_BTN_NONE && s_down == WG_BTN_NONE) wg_tip_show(s_hot);
+            } else if (wparam == WG_TIMER_SLIDER) {
+                if (s_down != WG_BTN_SLIDER) wg_close_slider();
             }
             return 0;
         case WM_MOUSEMOVE:
             if (!s_tracking) {
                 TRACKMOUSEEVENT tme = { sizeof(tme), TME_LEAVE, hwnd, 0 };
                 s_tracking = TrackMouseEvent(&tme);
+            }
+            KillTimer(hwnd, WG_TIMER_SLIDER);
+            if (s_down == WG_BTN_SLIDER) {
+                wg_slider_drag((short)HIWORD(lparam));
+                return 0;
             }
             if (s_dragging) {
                 POINT pt;
@@ -1097,7 +1196,16 @@ static LRESULT CALLBACK wg_proc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lpara
         case WM_MOUSELEAVE:
             s_tracking = FALSE;
             wg_set_hot(WG_BTN_NONE);
+            if (s_slider_open) SetTimer(hwnd, WG_TIMER_SLIDER, WG_SLIDER_LINGER_MS, NULL);
             return 0;
+        case WM_MOUSEWHEEL:
+            /* over the slider or the sound button: 5% per notch */
+            if (s_slider_open || s_hot == WG_BTN_SOUND) {
+                wg_set_volume(s_music_volume + 5 * GET_WHEEL_DELTA_WPARAM(wparam) / WHEEL_DELTA);
+                wg_save_settings();
+                return 0;
+            }
+            break;
         case WM_SETCURSOR:
             SetCursor(LoadCursorW(NULL, (LPCWSTR)(s_hot != WG_BTN_NONE ? IDC_HAND
                                                   : s_placing          ? IDC_SIZEALL
@@ -1108,6 +1216,13 @@ static LRESULT CALLBACK wg_proc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lpara
             wg_tip_hide();
             s_down = wg_hit((short)LOWORD(lparam), (short)HIWORD(lparam));
             s_hot = s_down;
+            if (s_down == WG_BTN_SLIDER) {
+                SetCapture(hwnd);
+                wg_slider_drag((short)HIWORD(lparam));
+                return 0;
+            }
+            /* a click anywhere else puts the slider away */
+            if (s_slider_open && s_down != WG_BTN_SOUND) wg_close_slider();
             if (s_placing && s_down == WG_BTN_NONE) {
                 /* the free offset is clamped on screen; drag from the clamped spot */
                 RECT rc, wa;
@@ -1140,6 +1255,13 @@ static LRESULT CALLBACK wg_proc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lpara
             if (s_dragging) {
                 s_dragging = FALSE;
                 ReleaseCapture();
+                return 0;
+            }
+            if (btn == WG_BTN_SLIDER) {
+                s_down = WG_BTN_NONE;
+                ReleaseCapture();
+                wg_save_settings();
+                wg_place_and_paint(FALSE);
                 return 0;
             }
             s_down = WG_BTN_NONE;
@@ -1285,6 +1407,7 @@ void pc_widget_set_visible(int visible) {
     } else {
         wg_tip_hide();
         wg_end_placing(FALSE);
+        s_slider_open = FALSE;
         ShowWindow(s_hwnd, SW_HIDE);
         s_hot = s_down = WG_BTN_NONE;
         if (s_settings != NULL) DestroyWindow(s_settings);

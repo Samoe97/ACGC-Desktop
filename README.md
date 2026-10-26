@@ -22,7 +22,7 @@ This is a fork of [ACGC-PC-Port](https://github.com/flyngmt/ACGC-PC-Port) by Fly
   - **Custom clock:** set any date and time in the settings. A custom clock keeps running from the time you set.
 - **Desktop clock widget**, drawn in the style of the in-game clock:
   - **Clock:** date, weekday, time and am/pm, with a **Play** button beside the time.
-  - **Drawer:** a thin bar under the time opens to show the camera controls (rotate, zoom, reset), a music on/off button and settings. Fully zoomed in matches the normal gameplay camera.
+  - **Drawer:** a thin bar under the time opens to show the camera controls (rotate, zoom, reset), a music volume slider and settings. Fully zoomed in matches the normal gameplay camera.
   - **Hide the clock** to keep only Play, a settings button and the drawer.
 - **Weather that fills the screen.** Rain, snow, cherry blossoms and falling leaves cover the whole view and stay put in the world, rather than following the camera.
 - **Tray icon** with Play, Return to wallpaper and Quit.
@@ -63,7 +63,7 @@ The thin brown bar under the time is a drawer. Hover over it and it thickens; cl
 | ↺ ↻ | Rotate the camera (up to ±35°). Hold to keep turning. |
 | − + | Zoom out / in. Fully zoomed in matches the regular gameplay camera. Hold to keep zooming. |
 | ⌂ | Reset the camera. |
-| 🔈 | Music on/off while the wallpaper is idle (off by default). Remembered between runs. |
+| 🔈 | Music volume while the wallpaper is idle. Click it to open a slider above it, then click or drag along the slider. The mouse wheel works too. It starts at 0 (silent), is remembered between runs, and the slider tucks away when you click elsewhere or move off the widget. |
 | ⚙ | Settings. |
 
 With **Hide the clock** turned on in the settings, the widget shrinks to **▶ Play** and a ⚙ settings badge. The drawer under them holds the camera and music buttons in two rows.
@@ -94,10 +94,8 @@ widget_free_y = 0
 hide_clock = 0
 # Camera/walker pace while idle (1.0 = original pace; Slow = 0.6)
 camera_speed = 0.60
-# The widget's music button toggles music_muted; music_volume is the idle level
-# when it's on, as a percentage of the game's master volume
-music_muted = 1
-music_volume = 50
+# Music and sound while idle, as % of the game's master volume (0 = silent)
+music_volume = 0
 ```
 
 ### Command-line options

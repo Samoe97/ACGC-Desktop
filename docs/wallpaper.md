@@ -156,7 +156,11 @@ The game clock is **PC clock + offset**. The `--time`/`--date` options and the c
   - **With the clock:** 266 units wide. The drawer holds seven buttons in one row.
   - **Hide the clock:** 106 units wide. Only Play and a settings badge, with a 62-unit drawer holding two rows of three.
   - **Shared code:** `wg_btn_center` gives every button's position for drawing, hit testing and tooltips.
-- **Music button:** toggles `music_muted` and sets `g_pc_wallpaper_volume`, the idle scale in `pc_audio.c`, to 0 or `music_volume`. `--wallpaper-volume` only sets the starting state; `wallpaper.ini` overrides it.
+- **Music volume:** the sound button opens a slider above it (`wg_render_slider`).
+  - **Look:** a tan panel with the brown rim, the level as a number, the closed drawer's brown track filled with the date ovals' lime, and a white knob.
+  - **Input:** click or drag along the track, or use the wheel (5% per notch).
+  - **Effect:** it sets `music_volume`, which `pc_audio.c` applies as `g_pc_wallpaper_volume`, the idle scale. `--wallpaper-volume` only sets the starting level; `wallpaper.ini` overrides it, and an old `music_muted = 1` reads as 0.
+  - **Closing:** another click on the widget, closing the drawer, or 2.5 s after the mouse leaves.
 - **Position** (`wg_target_rect`): a corner or edge middle of the primary monitor's work area, 16 px in, or a free offset from the work area's top-left. The rect is clamped on screen, which covers resolution changes. Along the top edge, `wg_get_layout` pins the clock and the drawer opens downward.
 - **Free placement** (`wg_begin_placing`): the widget turns `HWND_TOPMOST`, closes its drawer, and draws a translucent tan sheet with a dashed border, so every pixel can be grabbed. Accept and Cancel sit in the empty top-left corner.
   - **Drag:** dragging moves the window by the cursor's delta from where the drag began.
