@@ -283,6 +283,7 @@ int main(int argc, char* argv[]) {
             printf("  --time H[:M[:S]]    Override in-game time (e.g. 5, 17:30, 5:55:00)\n");
             printf("  --date M/D[/Y]      Override in-game date (e.g. 7/4, 12/24/2026)\n");
             printf("  --rain [intensity]  Force rainy weather; intensity is light, normal, or heavy\n");
+            printf("  --snow, --blossoms, --leaves  Force snow, cherry blossoms or falling leaves\n");
             printf("  --uber-shader       Disable shader specialization (single uber shader)\n");
             printf("  --wallpaper         Run as the desktop wallpaper (Ctrl+Alt+P play, Ctrl+Alt+W return)\n");
             printf("  --wallpaper-volume N  Idle wallpaper volume, 0-100%% of master (default 0)\n");
@@ -362,6 +363,13 @@ int main(int argc, char* argv[]) {
             int v = atoi(argv[i + 1]);
             if (v >= 0 && v <= 100) g_pc_wallpaper_volume = v;
             i++;
+        } else if (strcmp(argv[i], "--snow") == 0 || strcmp(argv[i], "--blossoms") == 0 ||
+                   strcmp(argv[i], "--leaves") == 0) {
+            /* other weather to preview, like --rain (at normal strength) */
+            g_pc_weather_override = argv[i][2] == 's' ? mEnv_WEATHER_SNOW
+                                    : argv[i][2] == 'b' ? mEnv_WEATHER_SAKURA
+                                                        : mEnv_WEATHER_LEAVES;
+            g_pc_weather_intensity_override = mEnv_WEATHER_INTENSITY_NORMAL;
         } else if (strcmp(argv[i], "--rain") == 0) {
             g_pc_weather_override = mEnv_WEATHER_RAIN;
             g_pc_weather_intensity_override = mEnv_WEATHER_INTENSITY_HEAVY;

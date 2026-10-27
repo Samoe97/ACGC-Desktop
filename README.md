@@ -2,6 +2,8 @@
 
 **Animal Crossing (GameCube) as your live desktop wallpaper.**
 
+![The same corner of a town in spring, summer, autumn and winter](docs/images/seasons.jpg)
+
 Your own town, from your own save, runs behind your desktop icons in real time. A slow, zoomed-out camera drifts between acres and stops to watch your villagers. The seasons, the time of day and the weather follow your PC's clock, and the game's own clock sits in the corner of the desktop. When you want to play, click **Play** (or press <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>P</kbd>) and the wallpaper becomes the game. Press <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>W</kbd> to send it back to the desktop.
 
 This is a fork of [ACGC-PC-Port](https://github.com/flyngmt/ACGC-PC-Port) by FlyingMeta. That port runs the [ac-decomp](https://github.com/ACreTeam/ac-decomp) decompilation natively on Windows, and this fork adds the wallpaper mode on top. Without `--wallpaper`, the program behaves like the regular PC port.
@@ -23,21 +25,23 @@ This is a fork of [ACGC-PC-Port](https://github.com/flyngmt/ACGC-PC-Port) by Fly
   - **Custom clock:** set any date and time in the settings. A custom clock keeps running from the time you set.
 - **Desktop clock widget**, drawn in the style of the in-game clock:
   - **Clock:** date, weekday, time and am/pm, with a **Play** button beside the time.
-  - **Drawer:** a thin bar under the time opens to show the camera controls (rotate, zoom, reset), a music volume slider and settings. Fully zoomed in matches the normal gameplay camera.
+  - **Drawer:** a thin bar under the time opens to show the camera controls (rotate, zoom, reset), a music volume slider, a weather on/off button and settings. Fully zoomed in matches the normal gameplay camera.
   - **Hide the clock** to keep only Play, a settings button and the drawer.
 - **Weather that fills the screen.** Rain, snow, cherry blossoms and falling leaves cover the whole view and stay put in the world, rather than following the camera.
 - **Tray icon** with Play, Return to wallpaper and Quit.
 
 ## Quick start
 
-1. Build the game (see [Building](#building)). The executable ends up in `pc/build32/bin/`.
-2. Put your disc image in `pc/build32/bin/rom/`. If you have a Dolphin save, put the `.gci` files in `pc/build32/bin/save/`.
-3. Run the game as a wallpaper:
-   ```bash
-   AnimalCrossing.exe --wallpaper
-   ```
+1. **Download** the latest `ACGC-Desktop` zip from the [Releases](../../releases) page and extract it anywhere, for example `Documents\ACGC-Desktop`.
+2. **Add your game.** Put your disc image (`.iso`, `.gcm` or `.ciso`) in the `rom` folder.
+   - **Your save:** to use the town you already have, put your Dolphin save's `.gci` files in the `save` folder. No save yet? Press **Play**, start a new game and save. From then on, the wallpaper shows your town.
+3. **Start it.** Double-click **`Start Wallpaper.bat`**.
+   - **Startup:** the town takes about 20 seconds to appear behind your desktop icons, and the clock widget appears in the bottom-right corner.
+   - **SmartScreen:** Windows may warn you about an unrecognised app the first time. Click *More info*, then *Run anyway*.
 
-To start it with Windows, put a shortcut to `AnimalCrossing.exe --wallpaper` in your Startup folder (<kbd>Win</kbd>+<kbd>R</kbd>, then `shell:startup`).
+To start it with Windows, press <kbd>Win</kbd>+<kbd>R</kbd>, type `shell:startup`, and put a shortcut to `Start Wallpaper.bat` in the folder that opens.
+
+To run it as the regular PC port instead (a normal game window), start `AnimalCrossing.exe` directly.
 
 ## Using it
 
@@ -46,7 +50,7 @@ To start it with Windows, put a shortcut to `AnimalCrossing.exe --wallpaper` in 
 | Switch | **Play** button, <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>P</kbd>, or the tray menu | <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>W</kbd> or the tray menu |
 | Window | Behind the desktop icons, full screen | Borderless fullscreen with focus |
 | Input | None (the desktop keeps working) | Keyboard and controller, as in the PC port |
-| Audio | Muted (see `--wallpaper-volume`) | Normal |
+| Audio | The widget's music volume (starts at 0, silent) | Normal |
 
 From the wallpaper, **Play** opens the regular title screen; choose *Start Game* to load your save as usual. In wallpaper mode, the title screen's and pause menu's *Quit Game* become **Return to Desktop**: they send the game back to the wallpaper instead of closing it. Double-clicking the tray icon also switches modes. To close the program, use *Quit* in the tray menu.
 
@@ -54,6 +58,8 @@ From the wallpaper, **Play** opens the regular title screen; choose *Start Game*
 > **Save in the game before you press <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>W</kbd>.** Returning to the wallpaper doesn't save for you yet. If you quit without saving, Mr. Resetti will have something to say next time.
 
 ### The widget
+
+![The clock widget with its drawer open](docs/images/widget.png)
 
 The panel in the bottom-right corner of your desktop shows the town's clock. **▶ Play**, to the left of the time, switches to playing.
 
@@ -68,7 +74,7 @@ The thin brown bar under the time is a drawer. Hover over it and it thickens; cl
 | ☁ | Show or hide weather particles (rain, snow, cherry blossoms, falling leaves) on the wallpaper. Remembered between runs; doesn't affect normal play. |
 | ⚙ | Settings. |
 
-With **Hide the clock** turned on in the settings, the widget shrinks to **▶ Play** and a ⚙ settings badge. The drawer under them holds the camera and music buttons in two rows.
+With **Hide the clock** turned on in the settings, the widget shrinks to **▶ Play** and a ⚙ settings badge. The drawer under them holds the other buttons in two rows.
 
 ### Settings
 
@@ -104,11 +110,14 @@ weather_particles = 1
 
 ### Command-line options
 
+`Start Wallpaper.bat` runs `AnimalCrossing.exe --wallpaper`. You can add any of these options to it, or to a shortcut:
+
 | Flag | Description |
 |---|---|
 | `--wallpaper` | Run as the desktop wallpaper |
 | `--wallpaper-volume N` | Starting volume while idle, as 0–100% of the master volume (default 0, muted). Once the music button has been used, `wallpaper.ini` wins. |
 | `--rain [light\|normal\|heavy]` | Force rain (handy for previewing the weather) |
+| `--snow`, `--blossoms`, `--leaves` | Force snow, cherry blossoms or falling leaves |
 | `--time H[:M[:S]]`, `--date M/D[/Y]` | Start the clock at this time/date (it keeps ticking) |
 | `--verbose` | Diagnostic logging |
 | `--timelapse` | Record a sped-up day of the wallpaper scene to `timelapse.mp4`, then exit (needs [ffmpeg](https://ffmpeg.org/)) |
@@ -138,13 +147,17 @@ pacman -S --needed mingw-w64-i686-gcc mingw-w64-i686-cmake mingw-w64-i686-SDL2 m
 From the **MSYS2 MINGW32** shell:
 
 ```bash
-git clone <this repository>
-cd ACGC-PC-Port/pc
+git clone <this repository> ACGC-Desktop
+cd ACGC-Desktop/pc
 mkdir -p build32 && cd build32
 cmake .. -G Ninja
 ninja
 mkdir -p bin/rom bin/save
 ```
+
+The program ends up in `pc/build32/bin/`. Put your disc image in `bin/rom/` and run `AnimalCrossing.exe --wallpaper` from there.
+
+To make a release folder like the downloadable one, run `pc/package_release.ps1` from PowerShell after building. It copies the program, `SDL2.dll`, the shaders, `Start Wallpaper.bat`, empty `rom` and `save` folders and the docs into `release/ACGC-Desktop/`.
 
 MSYS2 no longer ships `mingw-w64-i686-make`, so the upstream `build_pc.sh` (which uses `mingw32-make`) may not work. Ninja does the same job.
 

@@ -47,3 +47,6 @@ temp/
 include/PR/
 include/gcc/
 include/compiler/gcc/stdlib.h
+
+# Release packaging output (pc/package_release.ps1)
+release/
