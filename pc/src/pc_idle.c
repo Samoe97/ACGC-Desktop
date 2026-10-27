@@ -111,6 +111,17 @@ f32 pc_idle_get_speed(void) {
     return s_speed;
 }
 
+/* The widget's weather button: rain, snow, blossoms and leaves while idle. */
+static int s_weather_shown = TRUE;
+
+void pc_idle_set_weather_shown(int shown) {
+    s_weather_shown = shown;
+}
+
+int pc_idle_weather_shown(void) {
+    return s_weather_shown;
+}
+
 /* the pace actually used: the setting, or the timelapse's own */
 static f32 idle_speed(void) {
     return g_pc_timelapse ? IDLE_TL_SPEED : s_speed;

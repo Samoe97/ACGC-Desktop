@@ -34,6 +34,11 @@ void pc_idle_user_reset(void);
 void pc_idle_set_speed(f32 speed);
 f32  pc_idle_get_speed(void);
 
+/* Weather particles (rain, snow, cherry blossoms, leaves) shown while idle;
+ * the widget's weather button. On by default. */
+void pc_idle_set_weather_shown(int shown);
+int  pc_idle_weather_shown(void);
+
 /* Restart the idle scene (fade to a fresh title-demo scene) so a changed
  * clock's season, trees and lighting take effect. */
 void pc_idle_request_reload(void);

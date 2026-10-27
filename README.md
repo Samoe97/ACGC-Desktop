@@ -65,6 +65,7 @@ The thin brown bar under the time is a drawer. Hover over it and it thickens; cl
 | − + | Zoom out / in. Fully zoomed in matches the regular gameplay camera. Hold to keep zooming. |
 | ⌂ | Reset the camera. |
 | 🔈 | Music volume while the wallpaper is idle. Click it to open a slider above it, then click or drag along the slider. The mouse wheel works too. It starts at 0 (silent), is remembered between runs, and the slider tucks away when you click elsewhere or move off the widget. |
+| ☁ | Show or hide weather particles (rain, snow, cherry blossoms, falling leaves) on the wallpaper. Remembered between runs; doesn't affect normal play. |
 | ⚙ | Settings. |
 
 With **Hide the clock** turned on in the settings, the widget shrinks to **▶ Play** and a ⚙ settings badge. The drawer under them holds the camera and music buttons in two rows.
@@ -97,6 +98,8 @@ hide_clock = 0
 camera_speed = 0.60
 # Music and sound while idle, as % of the game's master volume (0 = silent)
 music_volume = 0
+# 1 = show rain, snow, cherry blossoms and falling leaves on the wallpaper
+weather_particles = 1
 ```
 
 ### Command-line options

@@ -60,6 +60,7 @@ enum {
     WG_BTN_ZOOM_IN,
     WG_BTN_RESET,
     WG_BTN_SOUND,
+    WG_BTN_WEATHER,
     WG_BTN_SETTINGS, /* in the drawer, or beside Play when the clock is hidden */
     WG_BTN_PLAY,
     WG_BTN_DRAWER, /* the drawer itself: click to open/close */
@@ -81,16 +82,17 @@ typedef struct {
     int cols;                 /* drawer buttons per row */
     f32 btn_x0;               /* first drawer button's center */
     int nbtn;
-    int btns[7];
+    int btns[8];
 } wg_frame_def;
 
 static const wg_frame_def s_frame_clock = {
-    266, 34, -1, 74, 258, 38, 87, 7, 91, 7,
-    { WG_BTN_ROT_L, WG_BTN_ROT_R, WG_BTN_ZOOM_OUT, WG_BTN_ZOOM_IN, WG_BTN_RESET, WG_BTN_SOUND, WG_BTN_SETTINGS },
+    266, 34, -1, 66, 258, 38, 87, 8, 81.5f, 8,
+    { WG_BTN_ROT_L, WG_BTN_ROT_R, WG_BTN_ZOOM_OUT, WG_BTN_ZOOM_IN, WG_BTN_RESET, WG_BTN_SOUND, WG_BTN_WEATHER,
+      WG_BTN_SETTINGS },
 };
 static const wg_frame_def s_frame_compact = {
-    106, 37, 87, 3, 103, 62, 41, 3, 28, 6,
-    { WG_BTN_ROT_L, WG_BTN_ROT_R, WG_BTN_RESET, WG_BTN_ZOOM_OUT, WG_BTN_ZOOM_IN, WG_BTN_SOUND },
+    106, 37, 87, 3, 103, 62, 41, 4, 18.5f, 7,
+    { WG_BTN_ROT_L, WG_BTN_ROT_R, WG_BTN_RESET, WG_BTN_WEATHER, WG_BTN_ZOOM_OUT, WG_BTN_ZOOM_IN, WG_BTN_SOUND },
 };
 
 #define WG_PLAY_HW 30.0f
@@ -100,7 +102,7 @@ static const wg_frame_def s_frame_compact = {
  * (hovered), to the open panel */
 #define WG_DRAWER_THIN  5.0f
 #define WG_DRAWER_HOVER 12.0f
-#define WG_BTN_STEP 25.0f
+#define WG_BTN_STEP 23.0f
 #define WG_BTN_R    11.0f
 
 /* colors from m_banti's prim/env colors */
@@ -228,6 +230,8 @@ void pc_widget_load_settings(void) {
             muted = n != 0;
         } else if (sscanf(line, " music_volume = %d", &n) == 1 && n >= 0 && n <= 100) {
             s_music_volume = n;
+        } else if (sscanf(line, " weather_particles = %d", &n) == 1) {
+            pc_idle_set_weather_shown(n != 0);
         } else if (sscanf(line, " hide_clock = %d", &n) == 1) {
             s_hide_clock = n != 0;
         } else if (sscanf(line, " widget_position = %31s", word) == 1) {
@@ -276,6 +280,8 @@ static void wg_save_settings(void) {
     fprintf(f, "# Music and sound while idle, as %% of the game's master volume (0 = silent);\n");
     fprintf(f, "# set with the slider on the widget's sound button\n");
     fprintf(f, "music_volume = %d\n", s_music_volume);
+    fprintf(f, "# 1 = show rain, snow, cherry blossoms and falling leaves on the wallpaper\n");
+    fprintf(f, "weather_particles = %d\n", pc_idle_weather_shown());
     fclose(f);
 }
 
@@ -428,8 +434,21 @@ enum {
     ICON_CHEVRON,
     ICON_SOUND_ON,
     ICON_SOUND_LOW,
-    ICON_SOUND_OFF
+    ICON_SOUND_OFF,
+    ICON_WEATHER_ON,
+    ICON_WEATHER_OFF
 };
+
+/* a cloud: three puffs on a flat base; grow < 0 shrinks it (for outlines) */
+static int icon_cloud(f32 x, f32 y, f32 grow) {
+    f32 a = (x + 5.0f) * (x + 5.0f) + (y + 1.0f) * (y + 1.0f);
+    f32 b = (x - 1.5f) * (x - 1.5f) + (y + 4.5f) * (y + 4.5f);
+    f32 c = (x - 6.5f) * (x - 6.5f) + (y + 0.5f) * (y + 0.5f);
+    f32 ra = 5.0f + grow, rb = 6.5f + grow, rc = 4.5f + grow;
+    int base = x > -10.0f - grow && x < 11.0f + grow && y > -1.0f && y < 3.5f + grow;
+
+    return (a < ra * ra || b < rb * rb || c < rc * rc || base) && y < 3.5f + grow;
+}
 
 static f32 seg_dist(f32 px, f32 py, f32 ax, f32 ay, f32 bx, f32 by) {
     f32 dx = bx - ax, dy = by - ay;
@@ -497,6 +516,16 @@ static int icon_inside(f32 x, f32 y, int icon) {
                 int in_fan = x > 2.0f && fabsf(atan2f(y, x - 1.0f)) < 0.85f;
                 return in_fan && (fabsf(wr - 5.5f) < 1.5f || (icon == ICON_SOUND_ON && fabsf(wr - 10.5f) < 1.5f));
             }
+        }
+        case ICON_WEATHER_ON:
+        case ICON_WEATHER_OFF: {
+            /* cloud outline (raised a little), then raindrops or a slash */
+            f32 cy = y + 3.0f;
+            int outline = icon_cloud(x, cy, 0.0f) && !icon_cloud(x, cy, -1.9f);
+            if (outline) return TRUE;
+            if (icon == ICON_WEATHER_OFF) return seg_dist(x, y, -11.0f, -11.0f, 11.0f, 11.0f) < stroke;
+            return seg_dist(x, y, -5.0f, 6.0f, -6.5f, 10.5f) < 1.5f || seg_dist(x, y, 0.5f, 6.0f, -1.0f, 10.5f) < 1.5f ||
+                   seg_dist(x, y, 6.0f, 6.0f, 4.5f, 10.5f) < 1.5f;
         }
         case ICON_CHEVRON: /* pointing down */
             return seg_dist(x, y, -10.0f, -4.5f, 0.0f, 4.5f) < 3.0f || seg_dist(x, y, 10.0f, -4.5f, 0.0f, 4.5f) < 3.0f;
@@ -588,6 +617,8 @@ static int wg_btn_icon(int btn) {
         case WG_BTN_RESET:    return ICON_HOME;
         case WG_BTN_SOUND:
             return s_music_volume == 0 ? ICON_SOUND_OFF : s_music_volume < 50 ? ICON_SOUND_LOW : ICON_SOUND_ON;
+        case WG_BTN_WEATHER:
+            return pc_idle_weather_shown() ? ICON_WEATHER_ON : ICON_WEATHER_OFF;
     }
     return ICON_GEAR;
 }
@@ -972,6 +1003,8 @@ static const WCHAR* wg_tip_text(int btn) {
         case WG_BTN_ZOOM_IN:  return L"Zoom in";
         case WG_BTN_RESET:    return L"Reset camera";
         case WG_BTN_SOUND:    return L"Music volume";
+        case WG_BTN_WEATHER:
+            return pc_idle_weather_shown() ? L"Hide rain, snow and leaves" : L"Show rain, snow and leaves";
         case WG_BTN_SETTINGS: return L"Settings";
         case WG_BTN_PLAY:     return L"Play  (Ctrl+Alt+P)";
         case WG_BTN_DRAWER:
@@ -1140,6 +1173,11 @@ static void wg_press(int btn) {
         case WG_BTN_RESET:    pc_idle_user_reset(); break;
         case WG_BTN_SOUND:
             s_slider_open = !s_slider_open;
+            wg_place_and_paint(TRUE);
+            break;
+        case WG_BTN_WEATHER:
+            pc_idle_set_weather_shown(!pc_idle_weather_shown());
+            wg_save_settings();
             wg_place_and_paint(TRUE);
             break;
         case WG_BTN_SETTINGS: wg_open_settings(); break;

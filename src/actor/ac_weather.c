@@ -573,6 +573,15 @@ static void aWeather_DrawWeatherPrv(ACTOR* actor, GAME* game) {
     aWeather_Profile_c* profile;
     int i;
 
+#ifdef TARGET_PC
+    /* the wallpaper widget's weather button: hide the particles while idle
+     * (they keep moving, so turning them back on is instant) */
+    {
+        extern int pc_idle_weather_shown(void);
+        if (pc_idle_active() && !pc_idle_weather_shown()) return;
+    }
+#endif
+
     _texture_z_light_fog_prim_xlu(game->graph);
 
     if ((weather->current_profile != NULL) && (priv != NULL)) {
