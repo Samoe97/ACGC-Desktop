@@ -207,6 +207,7 @@ An earlier attempt drew the widget inside the game, using the real `m_banti` clo
 | `src/game/m_actor.c` | Larger cull depth while idle | Distant actors draw and move |
 | `src/actor/ac_train0_move.c_inc` | Train tolerates one row off while idle | Train visible from further away |
 | `include/sys_dynamic.h` | Bigger per-frame display-list buffers on PC | See below |
+| `src/game/m_bgm.c` | `mBGM_init`/`mBGM_cleanup` treat the title demo as a normal town scene in wallpaper mode | Hourly town music instead of the title theme |
 | `src/lb_rtc.c` | `lbRTC_GetHardTime` reads `pc_os_rtc_time()` on PC | Timelapse fast clock |
 | `src/game/m_camera2.c` | `Camera2_CheckCullingMode` returns FALSE while idle | Its talk/close-up timers go stale under the idle camera and hid clumps of trees |
 | `src/bg_item/bg_item_common.c_inc` | Items in loaded blocks always draw while idle | Trees whose base was just off-screen vanished from the wide view |

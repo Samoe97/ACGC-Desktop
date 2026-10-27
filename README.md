@@ -17,6 +17,7 @@ This is a fork of [ACGC-PC-Port](https://github.com/flyngmt/ACGC-PC-Port) by Fly
   - **Walker behaviour:** it crosses acres, visits villagers and stays out of buildings.
   - **Loaded area:** the full 5×5 acres around the walker load, so nothing pops in at the edges.
   - **No void:** the camera never shows the area past the edge of the map.
+- **Hourly music.** With the volume turned up, the wallpaper plays the town's music for the current hour, not the title theme, including the town tune on the hour.
 - **Real time.** Idle mode uses your PC's date and time and your town's real weather and season. (The stock title demo forces fixed demo days.)
   - **Kept in sync:** the clock resyncs every minute and after the PC wakes from sleep.
   - **Custom clock:** set any date and time in the settings. A custom clock keeps running from the time you set.

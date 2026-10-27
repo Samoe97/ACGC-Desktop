@@ -1847,8 +1847,7 @@ static void mBGMPsComp_Stop_main_inform_sound(mBGMPsComp_Stop* stop) {
 static void mBGMPsComp_arm_make(u8 state);
 
 static void mBGMPsComp_Start_main_inform_sound(mBGMPsComp_Start* start) {
-    if (start->req_flag) {
-        if (start->flags != 0) {
+    if (start->req_flag) {        if (start->flags != 0) {
             sAdo_BgmCrossfadeStart(start->bgm_num);
         } else {
             sAdo_BgmStart(start->bgm_num);
@@ -2555,6 +2554,16 @@ extern void mBGM_ct() {
     mBGMForce_ct(&M_bgm.force);
 }
 
+/* Does the title demo play the title theme? In wallpaper mode the demo is the
+ * desktop's town, so it gets the town's hourly music like normal play. */
+static int mBGM_title_demo_theme(void) {
+#ifdef TARGET_PC
+    extern int g_pc_wallpaper_enabled;
+    if (g_pc_wallpaper_enabled) return FALSE;
+#endif
+    return mEv_IsTitleDemo();
+}
+
 extern void mBGM_init() {
     mBGMPsComp_delete_ps_wipe();
 
@@ -2564,7 +2573,7 @@ extern void mBGM_init() {
         mBGMForce* force = &M_bgm.force;
 
         if (field_type == mFI_FIELD_FG) {
-            if (mEv_IsTitleDemo()) {
+            if (mBGM_title_demo_theme()) {
                 mBGMPsComp_make_ps_demo(70, 0x168); // Play title music
             } else {
                 if ((force->inform != mBGMForce_INFORM_3 && force->inform != mBGMForce_INFORM_7) || force->flag) {
@@ -2596,7 +2605,7 @@ extern void mBGM_cleanup() {
         mActor_name_t field_type = mFI_GET_TYPE(field_id);
 
         if (field_type == mFI_FIELD_FG) {
-            if (mEv_IsTitleDemo()) {
+            if (mBGM_title_demo_theme()) {
                 mBGMPsComp_delete_ps_demo(70, 0x168); // Stop title music
             } else {
                 if ((force->inform != mBGMForce_INFORM_3 && force->inform != mBGMForce_INFORM_7) || force->flag) {
