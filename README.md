@@ -14,20 +14,17 @@ This is a fork of [ACGC-PC-Port](https://github.com/flyngmt/ACGC-PC-Port) by Fly
 ## Features
 
 - **Live wallpaper.** The game renders behind your desktop icons and doesn't take input while idle. Clicks on the desktop go to the desktop as usual.
-- **Your town, never your save.** The idle scene is the game's title demo, which loads your town from the save and discards everything when you start playing. Idle mode never writes to your save file.
-- **Attract-mode camera.** An invisible walker wanders your town so terrain, trees, buildings and villagers load around it. A slow, swaying camera follows it from above.
-  - **Walker behaviour:** it crosses acres, visits villagers and stays out of buildings.
-  - **Loaded area:** the full 5×5 acres around the walker load, so nothing pops in at the edges.
-  - **No void:** the camera never shows the area past the edge of the map.
-- **Hourly music.** With the volume turned up, the wallpaper plays the town's music for the current hour, not the title theme, including the town tune on the hour.
-- **Real time.** Idle mode uses your PC's date and time and your town's real weather and season. (The stock title demo forces fixed demo days.)
+- **Your town, never your save.** The wallpaper shows your town from your save, but never writes to your save file.
+- **A wandering camera.** A slow camera drifts around your town from above, from acre to acre, and stops by to watch your villagers.
+- **Hourly music.** With the volume turned up, the wallpaper plays the town's music for the current hour, including the town tune on the hour.
+- **Real time.** The wallpaper uses your PC's date and time and your town's real weather and season.
   - **Kept in sync:** the clock resyncs every minute and after the PC wakes from sleep.
   - **Custom clock:** set any date and time in the settings. A custom clock keeps running from the time you set.
 - **Desktop clock widget**, drawn in the style of the in-game clock:
   - **Clock:** date, weekday, time and am/pm, with a **Play** button beside the time.
   - **Drawer:** a thin bar under the time opens to show the camera controls (rotate, zoom, reset), a music volume slider, a weather on/off button and settings. Fully zoomed in matches the normal gameplay camera.
   - **Hide the clock** to keep only Play, a settings button and the drawer.
-- **Weather that fills the screen.** Rain, snow, cherry blossoms and falling leaves cover the whole view and stay put in the world, rather than following the camera.
+- **Weather that fills the screen.** Rain, snow, cherry blossoms and falling leaves cover the whole view.
 - **Tray icon** with Play, Return to wallpaper and Quit.
 
 ## Quick start
@@ -171,9 +168,9 @@ MSYS2 no longer ships `mingw-w64-i686-make`, so the upstream `build_pc.sh` (whic
 
 - **Returning to the wallpaper doesn't save the game** (see above).
 - **Primary monitor only.**
-- **The wallpaper always renders.** It runs at 60 fps and doesn't pause when a fullscreen app is in front.
+- **The wallpaper always renders.** It runs at 60 fps and doesn't pause when a fullscreen app is in front. (But it uses 1/4 as much resources as Discord in the background!)
 - **The camera is simple.** It wanders and visits villagers. It doesn't yet seek out events such as K.K. Slider, fireworks or the Bug-Off.
-- **The walker occasionally gets stuck** behind a river or cliff. After a few seconds it gives up and heads somewhere else.
+- **The camera occasionally gets stuck** behind a river or cliff. After a few seconds it moves on somewhere else.
 
 ## Documentation
 
